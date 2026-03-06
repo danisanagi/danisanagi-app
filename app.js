@@ -198,6 +198,8 @@ function renderAdminExpertsTab() {
           '<div class="user-card-detail">' + esc(expert.specialty || "Belirtilmemiş") + ' — ' + clientCount + ' danışan</div>' +
         '</div>' +
         '<div class="user-card-actions">' +
+          '<button class="btn btn-ghost btn-sm" onclick="openMessaging(\'' + escAttr(expert.id) + '\',\'' + escAttr(expert.full_name) + '\')" title="Mesaj">' +
+            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>' +
           '<button class="btn btn-ghost btn-sm" onclick="openAssignClients(\'' + expert.id + '\')" title="Danışan Ata">' +
             '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg></button>' +
           '<button class="btn btn-ghost btn-sm" onclick="openEditExpert(\'' + expert.id + '\')" title="Düzenle">' +
@@ -1452,6 +1454,7 @@ renderAdminView = async function() {
       '<button class="tab-btn active" onclick="switchAdminTab(\'dashboard\',this)">Panel</button>' +
       '<button class="tab-btn" onclick="switchAdminTab(\'experts\',this)">Uzmanlar</button>' +
       '<button class="tab-btn" onclick="switchAdminTab(\'clients\',this)">Danışanlar</button>' +
+      '<button class="tab-btn" onclick="switchAdminTab(\'messages\',this)">Mesajlar</button>' +
       '<button class="tab-btn" onclick="switchAdminTab(\'notes\',this)">Notlar</button>' +
       '<button class="tab-btn" onclick="switchAdminTab(\'calendar\',this)">Takvim</button>' +
     '</div>' +
@@ -1468,9 +1471,115 @@ switchAdminTab = function(tab, btn) {
   if (tab === "dashboard") renderAdminDashboardTab();
   else if (tab === "experts") renderAdminExpertsTab();
   else if (tab === "clients") renderAdminClientsTab();
+  else if (tab === "messages") renderAdminMessagesTab();
   else if (tab === "calendar") renderAdminCalendarTab();
   else renderAdminNotesTab();
 };
+
+// ==================== ADMIN MESSAGES TAB ====================
+async function renderAdminMessagesTab() {
+  var container = document.getElementById("adminTabContent");
+  container.innerHTML = '<div class="empty-state"><div class="loading-spinner"></div><p>Yükleniyor...</p></div>';
+
+  var d = window._adminData;
+
+  // Fetch all messages
+  var messagesRes = await sb.from("messages").select("*").order("created_at", { ascending: false }).limit(100);
+  var messages = messagesRes.data || [];
+
+  // Build a lookup of all users (experts + clients + admin)
+  var allUsers = {};
+  d.experts.forEach(function(e) { allUsers[e.id] = { name: e.full_name, role: 'expert' }; });
+  d.clients.forEach(function(c) { allUsers[c.id] = { name: c.full_name, role: 'client' }; });
+  allUsers[currentProfile.id] = { name: currentProfile.full_name, role: 'admin' };
+
+  // Group messages by conversation (pair of users)
+  var conversations = {};
+  messages.forEach(function(msg) {
+    var pair = [msg.sender_id, msg.receiver_id].sort().join('_');
+    if (!conversations[pair]) {
+      conversations[pair] = {
+        partnerId1: msg.sender_id,
+        partnerId2: msg.receiver_id,
+        lastMessage: msg,
+        count: 0
+      };
+    }
+    conversations[pair].count++;
+  });
+
+  var convList = Object.values(conversations).sort(function(a, b) {
+    return new Date(b.lastMessage.created_at) - new Date(a.lastMessage.created_at);
+  });
+
+  var html =
+    '<div class="page-header">' +
+      '<h2 class="section-title">Mesajlar</h2>' +
+    '</div>';
+
+  if (convList.length === 0) {
+    html += '<div class="empty-state"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><h3>Henüz mesaj yok</h3><p>Uzmanlarla mesajlaşmaya başlamak için Uzmanlar sekmesindeki mesaj ikonuna tıklayın.</p></div>';
+  } else {
+    html += '<div class="user-list">';
+    convList.forEach(function(conv) {
+      var user1 = allUsers[conv.partnerId1] || { name: 'Bilinmeyen', role: 'unknown' };
+      var user2 = allUsers[conv.partnerId2] || { name: 'Bilinmeyen', role: 'unknown' };
+
+      // Determine who is the "other" person (not admin)
+      var otherUser, otherId;
+      if (conv.partnerId1 === currentProfile.id) {
+        otherUser = user2;
+        otherId = conv.partnerId2;
+      } else if (conv.partnerId2 === currentProfile.id) {
+        otherUser = user1;
+        otherId = conv.partnerId1;
+      } else {
+        // Conversation between expert and client (admin viewing)
+        otherUser = null;
+        otherId = null;
+      }
+
+      var lastMsg = conv.lastMessage;
+      var senderName = allUsers[lastMsg.sender_id] ? allUsers[lastMsg.sender_id].name : '?';
+      var preview = lastMsg.content.length > 50 ? lastMsg.content.substring(0, 50) + '...' : lastMsg.content;
+      var timeStr = formatDate(lastMsg.created_at);
+
+      if (otherUser && otherId) {
+        // Admin's own conversation with someone
+        var roleLabel = otherUser.role === 'expert' ? 'Uzman' : otherUser.role === 'client' ? 'Danışan' : '';
+        html +=
+          '<div class="user-card" style="cursor:pointer;" onclick="openMessaging(\'' + escAttr(otherId) + '\',\'' + escAttr(otherUser.name) + '\')">' +
+            '<div class="user-card-avatar' + (otherUser.role === 'expert' ? ' expert-avatar' : '') + '">' + getInitials(otherUser.name) + '</div>' +
+            '<div class="user-card-info">' +
+              '<div class="user-card-name">' + esc(otherUser.name) + (roleLabel ? ' <span class="role-tag ' + otherUser.role + '" style="font-size:9px;padding:1px 6px;vertical-align:middle;">' + roleLabel + '</span>' : '') + '</div>' +
+              '<div class="user-card-detail"><strong>' + esc(senderName.split(' ')[0]) + ':</strong> ' + esc(preview) + ' — ' + timeStr + '</div>' +
+            '</div>' +
+            '<div class="user-card-actions">' +
+              '<span style="font-size:var(--text-xs);color:var(--color-text-faint);">' + conv.count + ' mesaj</span>' +
+            '</div>' +
+          '</div>';
+      } else {
+        // Conversation between two other users
+        html +=
+          '<div class="user-card">' +
+            '<div class="user-card-avatar" style="background:var(--color-surface-dynamic);color:var(--color-text-muted);">' +
+              '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' +
+            '</div>' +
+            '<div class="user-card-info">' +
+              '<div class="user-card-name">' + esc(user1.name) + ' ↔ ' + esc(user2.name) + '</div>' +
+              '<div class="user-card-detail"><strong>' + esc(senderName.split(' ')[0]) + ':</strong> ' + esc(preview) + ' — ' + timeStr + '</div>' +
+            '</div>' +
+            '<div class="user-card-actions">' +
+              '<span style="font-size:var(--text-xs);color:var(--color-text-faint);">' + conv.count + ' mesaj</span>' +
+            '</div>' +
+          '</div>';
+      }
+    });
+    html += '</div>';
+  }
+
+  container.innerHTML = html;
+}
 
 // ==================== ENHANCED EXPERT VIEW (add messaging + session notes buttons) ====================
 var _originalRenderExpertView = renderExpertView;
