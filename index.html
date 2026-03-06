@@ -191,6 +191,56 @@
   </div>
 </div>
 
+<!-- Schedule Session Modal -->
+<div id="sessionModal" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title" id="sessionModalTitle">Seans Planla</h3>
+      <button class="modal-close" onclick="closeModal('sessionModal')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
+    </div>
+    <div class="form-group">
+      <label>Uzman</label>
+      <select id="sessionExpertSelect" class="form-input" onchange="populateSessionClientSelect(this.value,'')"></select>
+    </div>
+    <div class="form-group">
+      <label>Danışan</label>
+      <select id="sessionClientSelect" class="form-input"></select>
+    </div>
+    <div class="form-group">
+      <label>Tarih</label>
+      <input type="date" id="sessionDate" class="form-input">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-3);">
+      <div class="form-group">
+        <label>Başlangıç Saati</label>
+        <input type="time" id="sessionStartTime" class="form-input">
+      </div>
+      <div class="form-group">
+        <label>Bitiş Saati</label>
+        <input type="time" id="sessionEndTime" class="form-input">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Durum</label>
+      <select id="sessionStatus" class="form-input">
+        <option value="planned">Planlandı</option>
+        <option value="completed">Tamamlandı</option>
+        <option value="cancelled">İptal</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Notlar <span style="font-weight:400;color:var(--color-text-faint);">(isteğe bağlı)</span></label>
+      <textarea id="sessionNotes" class="form-input" rows="3" placeholder="Seans hakkında notlar..."></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('sessionModal')">İptal</button>
+      <button class="btn btn-primary" onclick="saveSession()">Kaydet</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div id="toast" class="toast"></div>
 
