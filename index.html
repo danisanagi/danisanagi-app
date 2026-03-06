@@ -241,6 +241,61 @@
   </div>
 </div>
 
+<!-- Messaging Modal -->
+<div id="messageModal" class="modal-overlay">
+  <div class="modal modal-chat">
+    <div class="modal-header chat-modal-header">
+      <div style="display:flex;align-items:center;gap:var(--space-3);">
+        <div class="user-card-avatar" id="chatPartnerAvatar" style="width:36px;height:36px;font-size:var(--text-xs);">?</div>
+        <h3 class="modal-title" id="chatPartnerName">Mesajlar</h3>
+      </div>
+      <button class="modal-close" onclick="closeMessaging()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
+    </div>
+    <div id="chatMessages" class="chat-messages"></div>
+    <div class="chat-input-area">
+      <textarea id="chatInput" class="form-input" rows="2" placeholder="Mesajınızı yazın..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage();}"></textarea>
+      <button class="btn btn-primary btn-icon" onclick="sendMessage()" aria-label="Gönder">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Session Notes History Modal -->
+<div id="sessionNotesModal" class="modal-overlay">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <h3 class="modal-title" id="sessionNotesTitle">Seans Notları</h3>
+      <button class="modal-close" onclick="closeModal('sessionNotesModal')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
+    </div>
+    <div class="session-notes-form">
+      <div style="display:grid;grid-template-columns:1fr 2fr;gap:var(--space-3);">
+        <div class="form-group" style="margin-bottom:0;">
+          <label>Seans Tarihi</label>
+          <input type="date" id="sessionNoteDate" class="form-input">
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label>Başlık <span style="font-weight:400;color:var(--color-text-faint);">(isteğe bağlı)</span></label>
+          <input type="text" id="sessionNoteTitle" class="form-input" placeholder="Ör: 3. Seans - İlerleme Değerlendirmesi">
+        </div>
+      </div>
+      <div class="form-group" style="margin-top:var(--space-3);margin-bottom:0;">
+        <label>Not İçeriği</label>
+        <textarea id="sessionNoteContent" class="form-input" rows="3" placeholder="Seans notlarınızı yazın..."></textarea>
+      </div>
+      <div style="text-align:right;margin-top:var(--space-3);">
+        <button class="btn btn-primary" onclick="saveSessionNote()">Notu Kaydet</button>
+      </div>
+    </div>
+    <div class="session-notes-divider"></div>
+    <div id="sessionNotesList" class="session-notes-list"></div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div id="toast" class="toast"></div>
 
