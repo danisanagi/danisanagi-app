@@ -1639,6 +1639,44 @@ renderExpertView = async function() {
     html += '</div>';
   }
 
+    // Admin messages section
+  var adminRes = await sb.from("profiles").select("id, full_name").eq("role", "admin").limit(1).single();
+  var admin = adminRes.data;
+  if (admin) {
+    var adminUnread = await getUnreadCount(admin.id);
+    var adminUnreadBadge = adminUnread > 0 ? '<span class="unread-badge">' + adminUnread + '</span>' : '';
+    var myId2 = currentProfile.id;
+    var lastMsgRes = await sb.from("messages").select("*")
+      .or("and(sender_id.eq." + myId2 + ",receiver_id.eq." + admin.id + "),and(sender_id.eq." + admin.id + ",receiver_id.eq." + myId2 + ")")
+      .order("created_at", { ascending: false })
+      .limit(1);
+    var lastAdminMsg = (lastMsgRes.data || [])[0];
+    var adminPreview = '';
+    if (lastAdminMsg) {
+      var isMyMsg = lastAdminMsg.sender_id === myId2;
+      var prevText = lastAdminMsg.content.length > 40 ? lastAdminMsg.content.substring(0, 40) + '...' : lastAdminMsg.content;
+      adminPreview = '<div class="user-card-detail">' + (isMyMsg ? '<strong>Siz:</strong> ' : '<strong>Admin:</strong> ') + esc(prevText) + '</div>';
+    } else {
+      adminPreview = '<div class="user-card-detail">Henüz mesaj yok</div>';
+    }
+
+    html +=
+      '<div class="admin-message-section" style="margin-top:var(--space-6);margin-bottom:var(--space-2);">' +
+        '<h3 class="section-title">Yönetim Mesajları</h3>' +
+        '<div class="user-card" style="cursor:pointer;" onclick="openMessaging(\'' + escAttr(admin.id) + '\',\'' + escAttr(admin.full_name) + '\')">' +
+          '<div class="user-card-avatar" style="background:var(--color-primary);">' + getInitials(admin.full_name) + '</div>' +
+          '<div class="user-card-info">' +
+            '<div class="user-card-name">' + esc(admin.full_name) + ' <span class="role-tag admin" style="font-size:9px;padding:1px 6px;vertical-align:middle;">Admin</span>' + adminUnreadBadge + '</div>' +
+            adminPreview +
+          '</div>' +
+          '<div class="user-card-actions">' +
+            '<button class="btn btn-primary btn-sm">' +
+              '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Mesaj</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+  }
+
   // Upcoming sessions section
   html += '<div class="upcoming-sessions-section">';
   html += '<h3 class="section-title" style="margin-top:var(--space-8);">Yaklaşan Seanslar</h3>';
