@@ -1099,3 +1099,539 @@ document.addEventListener("keydown", function(e) {
 document.getElementById("loginPassword").addEventListener("keydown", function(e) {
   if (e.key === "Enter") handleLogin();
 });
+
+// ==================== MESSAGING SYSTEM ====================
+var currentChatPartnerId = null;
+var currentChatPartnerName = null;
+var messagePollingInterval = null;
+
+function openMessaging(partnerId, partnerName) {
+  currentChatPartnerId = partnerId;
+  currentChatPartnerName = partnerName;
+  document.getElementById("chatPartnerName").textContent = partnerName;
+  document.getElementById("chatPartnerAvatar").textContent = getInitials(partnerName);
+  document.getElementById("chatInput").value = "";
+  loadMessages(partnerId);
+  openModal("messageModal");
+  // Poll for new messages every 5 seconds
+  if (messagePollingInterval) clearInterval(messagePollingInterval);
+  messagePollingInterval = setInterval(function() { loadMessages(partnerId, true); }, 5000);
+}
+
+function closeMessaging() {
+  if (messagePollingInterval) { clearInterval(messagePollingInterval); messagePollingInterval = null; }
+  currentChatPartnerId = null;
+  currentChatPartnerName = null;
+  closeModal("messageModal");
+}
+
+async function loadMessages(partnerId, silent) {
+  var container = document.getElementById("chatMessages");
+  if (!silent) {
+    container.innerHTML = '<div style="text-align:center;padding:var(--space-6);color:var(--color-text-faint);"><div class="loading-spinner"></div></div>';
+  }
+
+  var myId = currentProfile.id;
+  // Get messages between current user and partner
+  var res = await sb.from("messages").select("*")
+    .or("and(sender_id.eq." + myId + ",receiver_id.eq." + partnerId + "),and(sender_id.eq." + partnerId + ",receiver_id.eq." + myId + ")")
+    .order("created_at", { ascending: true });
+
+  var messages = res.data || [];
+
+  if (messages.length === 0) {
+    container.innerHTML = '<div class="chat-empty"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><p>Henüz mesaj yok. İlk mesajı gönderin.</p></div>';
+    return;
+  }
+
+  var html = '';
+  var lastDate = '';
+  messages.forEach(function(msg) {
+    var msgDate = new Date(msg.created_at);
+    var dateStr = formatSessionDate(msgDate.getFullYear() + '-' + String(msgDate.getMonth() + 1).padStart(2, '0') + '-' + String(msgDate.getDate()).padStart(2, '0'));
+    if (dateStr !== lastDate) {
+      html += '<div class="chat-date-divider"><span>' + dateStr + '</span></div>';
+      lastDate = dateStr;
+    }
+    var isMine = msg.sender_id === myId;
+    var timeStr = String(msgDate.getHours()).padStart(2, '0') + ':' + String(msgDate.getMinutes()).padStart(2, '0');
+    html += '<div class="chat-bubble ' + (isMine ? 'chat-mine' : 'chat-theirs') + '">' +
+      '<div class="chat-bubble-text">' + esc(msg.content) + '</div>' +
+      '<div class="chat-bubble-time">' + timeStr + '</div>' +
+    '</div>';
+  });
+
+  container.innerHTML = html;
+  // Scroll to bottom
+  container.scrollTop = container.scrollHeight;
+
+  // Mark unread messages as read
+  var unreadIds = messages.filter(function(m) { return m.receiver_id === myId && !m.is_read; }).map(function(m) { return m.id; });
+  if (unreadIds.length > 0) {
+    await sb.from("messages").update({ is_read: true }).in("id", unreadIds);
+  }
+}
+
+async function sendMessage() {
+  var input = document.getElementById("chatInput");
+  var text = input.value.trim();
+  if (!text || !currentChatPartnerId) return;
+
+  input.value = '';
+  input.focus();
+
+  var res = await sb.from("messages").insert({
+    sender_id: currentProfile.id,
+    receiver_id: currentChatPartnerId,
+    content: text
+  });
+
+  if (res.error) {
+    showToast("Mesaj gönderilemedi: " + res.error.message);
+    return;
+  }
+
+  loadMessages(currentChatPartnerId, true);
+}
+
+async function getUnreadCount(partnerId) {
+  var res = await sb.from("messages").select("id", { count: "exact", head: true })
+    .eq("receiver_id", currentProfile.id)
+    .eq("sender_id", partnerId)
+    .eq("is_read", false);
+  return res.count || 0;
+}
+
+// ==================== SESSION NOTES HISTORY ====================
+var currentSessionNoteClientId = null;
+
+async function showSessionNotes(clientId, clientName) {
+  currentSessionNoteClientId = clientId;
+  document.getElementById("sessionNotesTitle").textContent = clientName + " — Seans Notları";
+  document.getElementById("sessionNoteDate").value = new Date().toISOString().split('T')[0];
+  document.getElementById("sessionNoteTitle").value = "";
+  document.getElementById("sessionNoteContent").value = "";
+  await loadSessionNotes(clientId);
+  openModal("sessionNotesModal");
+}
+
+async function loadSessionNotes(clientId) {
+  var container = document.getElementById("sessionNotesList");
+  container.innerHTML = '<div style="text-align:center;padding:var(--space-4);color:var(--color-text-faint);"><div class="loading-spinner"></div></div>';
+
+  var res = await sb.from("session_notes").select("*")
+    .eq("expert_id", currentProfile.id)
+    .eq("client_id", clientId)
+    .order("session_date", { ascending: false });
+
+  var notes = res.data || [];
+
+  if (notes.length === 0) {
+    container.innerHTML = '<div style="text-align:center;padding:var(--space-6);color:var(--color-text-faint);font-size:var(--text-sm);">Henüz seans notu eklenmemiş.</div>';
+    return;
+  }
+
+  var html = '';
+  notes.forEach(function(note) {
+    html += '<div class="session-note-entry">' +
+      '<div class="session-note-header">' +
+        '<div class="session-note-date-badge">' + formatSessionDate(note.session_date) + '</div>' +
+        (note.title ? '<div class="session-note-entry-title">' + esc(note.title) + '</div>' : '') +
+        '<button class="btn btn-ghost btn-sm" onclick="deleteSessionNote(' + note.id + ')" title="Sil" style="color:var(--color-error);margin-left:auto;padding:var(--space-1);">' +
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>' +
+      '</div>' +
+      '<div class="session-note-body">' + esc(note.content) + '</div>' +
+    '</div>';
+  });
+
+  container.innerHTML = html;
+}
+
+async function saveSessionNote() {
+  var date = document.getElementById("sessionNoteDate").value;
+  var title = document.getElementById("sessionNoteTitle").value.trim();
+  var content = document.getElementById("sessionNoteContent").value.trim();
+
+  if (!date || !content) {
+    showToast("Tarih ve not içeriği zorunludur.");
+    return;
+  }
+
+  var res = await sb.from("session_notes").insert({
+    expert_id: currentProfile.id,
+    client_id: currentSessionNoteClientId,
+    session_date: date,
+    title: title || null,
+    content: content
+  });
+
+  if (res.error) {
+    showToast("Hata: " + res.error.message);
+    return;
+  }
+
+  showToast("Seans notu eklendi");
+  document.getElementById("sessionNoteTitle").value = "";
+  document.getElementById("sessionNoteContent").value = "";
+  loadSessionNotes(currentSessionNoteClientId);
+}
+
+async function deleteSessionNote(noteId) {
+  if (!confirm("Bu seans notunu silmek istediğinize emin misiniz?")) return;
+  var res = await sb.from("session_notes").delete().eq("id", noteId);
+  if (res.error) {
+    showToast("Hata: " + res.error.message);
+    return;
+  }
+  showToast("Seans notu silindi");
+  loadSessionNotes(currentSessionNoteClientId);
+}
+
+// ==================== ADMIN DASHBOARD ====================
+async function renderAdminDashboardTab() {
+  var container = document.getElementById("adminTabContent");
+  container.innerHTML = '<div class="empty-state"><div class="loading-spinner"></div><p>Yükleniyor...</p></div>';
+
+  var d = window._adminData;
+  var today = new Date();
+  var todayStr = today.toISOString().split('T')[0];
+
+  // Get this week boundaries (Monday to Sunday)
+  var dayOfWeek = today.getDay();
+  var mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  var monday = new Date(today);
+  monday.setDate(today.getDate() + mondayOffset);
+  var sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  var mondayStr = monday.toISOString().split('T')[0];
+  var sundayStr = sunday.toISOString().split('T')[0];
+
+  // Fetch scheduled sessions for stats
+  var allSessionsRes = await sb.from("scheduled_sessions").select("*");
+  var allSessions = allSessionsRes.data || [];
+
+  var todaySessions = allSessions.filter(function(s) { return s.session_date === todayStr; });
+  var weekSessions = allSessions.filter(function(s) { return s.session_date >= mondayStr && s.session_date <= sundayStr; });
+  var plannedSessions = allSessions.filter(function(s) { return s.status === 'planned' && s.session_date >= todayStr; });
+  var completedSessions = allSessions.filter(function(s) { return s.status === 'completed'; });
+
+  // Fetch messages count
+  var messagesRes = await sb.from("messages").select("id", { count: "exact", head: true });
+  var totalMessages = messagesRes.count || 0;
+
+  // Fetch session_notes count
+  var sessionNotesRes = await sb.from("session_notes").select("id", { count: "exact", head: true });
+  var totalSessionNotes = sessionNotesRes.count || 0;
+
+  var html =
+    '<h2 class="section-title">Gösterge Paneli</h2>' +
+    // Row 1: Key Stats
+    '<div class="dashboard-grid">' +
+      '<div class="dash-card dash-card-highlight">' +
+        '<div class="dash-icon">📅</div>' +
+        '<div class="dash-value">' + todaySessions.length + '</div>' +
+        '<div class="dash-label">Bugünkü Seans</div>' +
+      '</div>' +
+      '<div class="dash-card">' +
+        '<div class="dash-icon">📊</div>' +
+        '<div class="dash-value">' + weekSessions.length + '</div>' +
+        '<div class="dash-label">Bu Hafta</div>' +
+      '</div>' +
+      '<div class="dash-card">' +
+        '<div class="dash-icon">⏳</div>' +
+        '<div class="dash-value">' + plannedSessions.length + '</div>' +
+        '<div class="dash-label">Bekleyen Seans</div>' +
+      '</div>' +
+      '<div class="dash-card">' +
+        '<div class="dash-icon">✅</div>' +
+        '<div class="dash-value">' + completedSessions.length + '</div>' +
+        '<div class="dash-label">Tamamlanan</div>' +
+      '</div>' +
+    '</div>' +
+    // Row 2: More stats
+    '<div class="dashboard-grid dashboard-grid-3">' +
+      '<div class="dash-card">' +
+        '<div class="dash-icon">👥</div>' +
+        '<div class="dash-value">' + d.experts.length + ' / ' + d.clients.length + '</div>' +
+        '<div class="dash-label">Uzman / Danışan</div>' +
+      '</div>' +
+      '<div class="dash-card">' +
+        '<div class="dash-icon">💬</div>' +
+        '<div class="dash-value">' + totalMessages + '</div>' +
+        '<div class="dash-label">Toplam Mesaj</div>' +
+      '</div>' +
+      '<div class="dash-card">' +
+        '<div class="dash-icon">📝</div>' +
+        '<div class="dash-value">' + (d.notes.length + totalSessionNotes) + '</div>' +
+        '<div class="dash-label">Toplam Not</div>' +
+      '</div>' +
+    '</div>';
+
+  // Upcoming sessions today
+  if (todaySessions.length > 0) {
+    html += '<h3 class="section-title" style="margin-top:var(--space-6);">Bugünkü Seanslar</h3>';
+    html += '<div class="session-list session-list-compact">';
+    todaySessions.forEach(function(sess) {
+      var expert = d.experts.find(function(e) { return e.id === sess.expert_id; });
+      var client = d.clients.find(function(c) { return c.id === sess.client_id; });
+      html +=
+        '<div class="session-card session-card-compact">' +
+          '<div class="session-card-date">' +
+            '<div class="session-time">' + sess.start_time.substring(0, 5) + ' – ' + sess.end_time.substring(0, 5) + '</div>' +
+          '</div>' +
+          '<div class="session-card-info">' +
+            '<div class="session-names">' +
+              '<span class="session-expert">' + esc(expert ? expert.full_name : "?") + '</span>' +
+              '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>' +
+              '<span class="session-client">' + esc(client ? client.full_name : "?") + '</span>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+    });
+    html += '</div>';
+  }
+
+  // Expert workload breakdown
+  html += '<h3 class="section-title" style="margin-top:var(--space-6);">Uzman İş Yükü</h3>';
+  html += '<div class="workload-list">';
+  d.experts.forEach(function(expert) {
+    var clientCount = d.assignments.filter(function(a) { return a.expert_id === expert.id; }).length;
+    var expertSessions = allSessions.filter(function(s) { return s.expert_id === expert.id && s.session_date >= todayStr && s.status === 'planned'; }).length;
+    var maxBar = Math.max(clientCount, 1);
+    html +=
+      '<div class="workload-row">' +
+        '<div class="workload-name">' +
+          '<div class="user-card-avatar expert-avatar" style="width:32px;height:32px;font-size:var(--text-xs);">' + getInitials(expert.full_name) + '</div>' +
+          '<span>' + esc(expert.full_name) + '</span>' +
+        '</div>' +
+        '<div class="workload-stats">' +
+          '<span class="workload-badge">' + clientCount + ' danışan</span>' +
+          '<span class="workload-badge workload-badge-alt">' + expertSessions + ' yaklaşan seans</span>' +
+        '</div>' +
+      '</div>';
+  });
+  html += '</div>';
+
+  container.innerHTML = html;
+}
+
+// ==================== ENHANCED ADMIN VIEW (add Dashboard + Mesajlar tab) ====================
+// Override renderAdminView to add new tabs
+var _originalRenderAdminView = renderAdminView;
+renderAdminView = async function() {
+  var main = document.getElementById("mainContent");
+  main.innerHTML = '<div class="empty-state"><div class="loading-spinner"></div><p>Yükleniyor...</p></div>';
+
+  var expertsRes = await sb.from("profiles").select("*").eq("role", "expert").order("full_name");
+  var clientsRes = await sb.from("profiles").select("*").eq("role", "client").order("full_name");
+  var assignRes = await sb.from("assignments").select("*");
+  var notesRes = await sb.from("notes").select("*");
+  var sessionsRes = await sb.from("scheduled_sessions").select("*").order("session_date").order("start_time");
+
+  var experts = expertsRes.data || [];
+  var clients = clientsRes.data || [];
+  var assignments = assignRes.data || [];
+  var notes = notesRes.data || [];
+  var scheduledSessions = sessionsRes.data || [];
+
+  var totalExperts = experts.length;
+  var totalClients = clients.length;
+  var totalNotes = notes.length;
+  var assignedClients = new Set(assignments.map(function(a) { return a.client_id; })).size;
+
+  window._adminData = { experts: experts, clients: clients, assignments: assignments, notes: notes, scheduledSessions: scheduledSessions };
+
+  main.innerHTML =
+    '<div class="stats-grid">' +
+      '<div class="stat-card"><div class="stat-value">' + totalExperts + '</div><div class="stat-label">Uzman</div></div>' +
+      '<div class="stat-card"><div class="stat-value">' + totalClients + '</div><div class="stat-label">Danışan</div></div>' +
+      '<div class="stat-card"><div class="stat-value">' + totalNotes + '</div><div class="stat-label">Seans Notu</div></div>' +
+      '<div class="stat-card"><div class="stat-value">' + assignedClients + '</div><div class="stat-label">Atanmış Danışan</div></div>' +
+    '</div>' +
+    '<div class="tab-nav">' +
+      '<button class="tab-btn active" onclick="switchAdminTab(\'dashboard\',this)">Panel</button>' +
+      '<button class="tab-btn" onclick="switchAdminTab(\'experts\',this)">Uzmanlar</button>' +
+      '<button class="tab-btn" onclick="switchAdminTab(\'clients\',this)">Danışanlar</button>' +
+      '<button class="tab-btn" onclick="switchAdminTab(\'notes\',this)">Notlar</button>' +
+      '<button class="tab-btn" onclick="switchAdminTab(\'calendar\',this)">Takvim</button>' +
+    '</div>' +
+    '<div id="adminTabContent"></div>';
+
+  renderAdminDashboardTab();
+};
+
+// Override switchAdminTab to handle new tabs
+var _originalSwitchAdminTab = switchAdminTab;
+switchAdminTab = function(tab, btn) {
+  document.querySelectorAll(".tab-btn").forEach(function(b) { b.classList.remove("active"); });
+  btn.classList.add("active");
+  if (tab === "dashboard") renderAdminDashboardTab();
+  else if (tab === "experts") renderAdminExpertsTab();
+  else if (tab === "clients") renderAdminClientsTab();
+  else if (tab === "calendar") renderAdminCalendarTab();
+  else renderAdminNotesTab();
+};
+
+// ==================== ENHANCED EXPERT VIEW (add messaging + session notes buttons) ====================
+var _originalRenderExpertView = renderExpertView;
+renderExpertView = async function() {
+  var main = document.getElementById("mainContent");
+  main.innerHTML = '<div class="empty-state"><div class="loading-spinner"></div><p>Yükleniyor...</p></div>';
+
+  var assignRes = await sb.from("assignments").select("*, client:client_id(id, full_name, email, phone)").eq("expert_id", currentProfile.id);
+  var assignments = assignRes.data || [];
+
+  var today = new Date().toISOString().split("T")[0];
+  var sessionsRes = await sb.from("scheduled_sessions")
+    .select("*, client:client_id(id, full_name)")
+    .eq("expert_id", currentProfile.id)
+    .gte("session_date", today)
+    .order("session_date")
+    .order("start_time");
+  var upcomingSessions = sessionsRes.data || [];
+
+  var html =
+    '<div class="page-header">' +
+      '<h2 class="page-title">Danışanlarım</h2>' +
+      '<span class="badge badge-online">Çevrimiçi</span>' +
+    '</div>';
+
+  if (assignments.length === 0) {
+    html += '<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><h3>Henüz danışanınız yok</h3><p>Admin tarafından size danışan atandığında burada görünecektir.</p></div>';
+  } else {
+    window._expertClients = assignments;
+    html += '<div class="user-list" id="expertClientList">';
+    for (var i = 0; i < assignments.length; i++) {
+      var a = assignments[i];
+      var client = a.client;
+      var notesRes2 = await sb.from("notes").select("id").eq("expert_id", currentProfile.id).eq("client_id", client.id);
+      var noteCount = (notesRes2.data || []).length;
+      var unreadCount = await getUnreadCount(client.id);
+      var unreadBadge = unreadCount > 0 ? '<span class="unread-badge">' + unreadCount + '</span>' : '';
+      html +=
+        '<div class="user-card">' +
+          '<div class="user-card-avatar">' + getInitials(client.full_name) + '</div>' +
+          '<div class="user-card-info">' +
+            '<div class="user-card-name">' + esc(client.full_name) + '</div>' +
+            '<div class="user-card-detail">' + noteCount + ' seans notu</div>' +
+          '</div>' +
+          '<div class="user-card-actions">' +
+            '<button class="btn btn-ghost btn-sm" onclick="openMessaging(\'' + escAttr(client.id) + '\',\'' + escAttr(client.full_name) + '\')" title="Mesaj">' +
+              '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' + unreadBadge + '</button>' +
+            '<button class="btn btn-ghost btn-sm" onclick="showSessionNotes(\'' + escAttr(client.id) + '\',\'' + escAttr(client.full_name) + '\')" title="Seans Notları">' +
+              '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></button>' +
+            '<button class="btn btn-primary btn-sm" onclick="startVideoCall(\'' + escAttr(client.id) + '\',\'' + escAttr(client.full_name) + '\')">' +
+              '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg> Görüşme</button>' +
+            '<button class="btn btn-ghost btn-sm" onclick="showClientDetail(\'' + client.id + '\')">' +
+              '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Notlar</button>' +
+          '</div>' +
+        '</div>';
+    }
+    html += '</div>';
+  }
+
+  // Upcoming sessions section
+  html += '<div class="upcoming-sessions-section">';
+  html += '<h3 class="section-title" style="margin-top:var(--space-8);">Yaklaşan Seanslar</h3>';
+
+  if (upcomingSessions.length === 0) {
+    html += '<p class="no-sessions-msg">Yaklaşan planlanmış seans bulunmuyor.</p>';
+  } else {
+    html += '<div class="session-list session-list-compact">';
+    upcomingSessions.forEach(function(sess) {
+      var clientName = sess.client ? sess.client.full_name : "?";
+      var statusClass = sess.status === "completed" ? "session-status-completed" : sess.status === "cancelled" ? "session-status-cancelled" : "session-status-planned";
+      var statusLabel = sess.status === "completed" ? "Tamamlandı" : sess.status === "cancelled" ? "İptal" : "Planlandı";
+      html +=
+        '<div class="session-card session-card-compact">' +
+          '<div class="session-card-date">' +
+            '<div class="session-day">' + formatSessionDate(sess.session_date) + '</div>' +
+            '<div class="session-time">' + sess.start_time.substring(0, 5) + ' – ' + sess.end_time.substring(0, 5) + '</div>' +
+          '</div>' +
+          '<div class="session-card-info">' +
+            '<div class="session-names"><span class="session-client">' + esc(clientName) + '</span></div>' +
+            (sess.notes ? '<div class="session-notes-preview">' + esc(sess.notes) + '</div>' : '') +
+          '</div>' +
+          '<span class="session-status ' + statusClass + '">' + statusLabel + '</span>' +
+        '</div>';
+    });
+    html += '</div>';
+  }
+
+  html += '</div>';
+  html += '<div id="clientDetailView" class="detail-view"></div>';
+  main.innerHTML = html;
+};
+
+// ==================== ENHANCED CLIENT VIEW (add messaging) ====================
+var _originalRenderClientView = renderClientView;
+renderClientView = async function() {
+  var main = document.getElementById("mainContent");
+  main.innerHTML = '<div class="empty-state"><div class="loading-spinner"></div><p>Yükleniyor...</p></div>';
+
+  var assignRes = await sb.from("assignments").select("*, expert:expert_id(id, full_name, specialty, email)").eq("client_id", currentProfile.id);
+  var assignment = (assignRes.data || [])[0];
+
+  var today = new Date().toISOString().split("T")[0];
+  var sessionsRes = await sb.from("scheduled_sessions")
+    .select("*, expert:expert_id(id, full_name)")
+    .eq("client_id", currentProfile.id)
+    .gte("session_date", today)
+    .order("session_date")
+    .order("start_time");
+  var upcomingSessions = sessionsRes.data || [];
+
+  var html = '<div class="page-header"><h2 class="page-title">Hoş Geldiniz, ' + esc(currentProfile.full_name.split(" ")[0]) + '</h2></div>';
+
+  if (!assignment || !assignment.expert) {
+    html += '<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg><h3>Henüz bir uzman atanmadı</h3><p>Size bir uzman atandığında burada görüşme bilgileri görünecektir.</p></div>';
+  } else {
+    var expert = assignment.expert;
+    var unreadCount = await getUnreadCount(expert.id);
+    var unreadBadge = unreadCount > 0 ? ' <span class="unread-badge">' + unreadCount + '</span>' : '';
+    html +=
+      '<div class="card" style="max-width:480px;">' +
+        '<div class="card-header"><h3 class="card-title">Uzmanınız</h3></div>' +
+        '<div style="display:flex;align-items:center;gap:var(--space-4);margin-bottom:var(--space-5);">' +
+          '<div class="user-card-avatar expert-avatar" style="width:56px;height:56px;font-size:var(--text-lg);">' + getInitials(expert.full_name) + '</div>' +
+          '<div><div style="font-weight:600;font-size:var(--text-base);">' + esc(expert.full_name) + '</div><div style="font-size:var(--text-sm);color:var(--color-text-muted);">' + esc(expert.specialty || "") + '</div></div>' +
+        '</div>' +
+        '<div style="display:flex;gap:var(--space-3);">' +
+          '<button class="btn btn-primary" style="flex:1;" onclick="startVideoCall(\'' + escAttr(expert.id) + '\',\'' + escAttr(expert.full_name) + '\')">' +
+            '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg> Görüntülü Görüşme</button>' +
+          '<button class="btn btn-secondary" style="flex:1;" onclick="openMessaging(\'' + escAttr(expert.id) + '\',\'' + escAttr(expert.full_name) + '\')">' +
+            '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Mesaj' + unreadBadge + '</button>' +
+        '</div>' +
+      '</div>';
+
+    // Upcoming sessions for client
+    html += '<div class="upcoming-sessions-section" style="max-width:480px;margin-top:var(--space-6);">';
+    html += '<h3 class="section-title">Yaklaşan Seanslar</h3>';
+
+    if (upcomingSessions.length === 0) {
+      html += '<p class="no-sessions-msg">Yaklaşan planlanmış seans bulunmuyor.</p>';
+    } else {
+      html += '<div class="session-list session-list-compact">';
+      upcomingSessions.forEach(function(sess) {
+        var expertName = sess.expert ? sess.expert.full_name : "?";
+        var statusClass = sess.status === "completed" ? "session-status-completed" : sess.status === "cancelled" ? "session-status-cancelled" : "session-status-planned";
+        var statusLabel = sess.status === "completed" ? "Tamamlandı" : sess.status === "cancelled" ? "İptal" : "Planlandı";
+        html +=
+          '<div class="session-card session-card-compact">' +
+            '<div class="session-card-date">' +
+              '<div class="session-day">' + formatSessionDate(sess.session_date) + '</div>' +
+              '<div class="session-time">' + sess.start_time.substring(0, 5) + ' – ' + sess.end_time.substring(0, 5) + '</div>' +
+            '</div>' +
+            '<div class="session-card-info">' +
+              '<div class="session-names"><span class="session-expert">' + esc(expertName) + '</span></div>' +
+            '</div>' +
+            '<span class="session-status ' + statusClass + '">' + statusLabel + '</span>' +
+          '</div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+
+  main.innerHTML = html;
+};
