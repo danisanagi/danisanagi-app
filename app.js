@@ -202,7 +202,7 @@ function renderAdminExpertsTab() {
             '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg></button>' +
           '<button class="btn btn-ghost btn-sm" onclick="openEditExpert(\'' + expert.id + '\')" title="Düzenle">' +
             '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>' +
-          '<button class="btn btn-ghost btn-sm" onclick="confirmDelete(\'' + expert.id + '\',\'' + esc(expert.full_name) + '\',\'expert\')" title="Sil" style="color:var(--color-error);">' +
+          '<button class="btn btn-ghost btn-sm" onclick="confirmDelete(\'' + expert.id + '\',\'' + escAttr(expert.full_name) + '\',\'expert\')" title="Sil" style="color:var(--color-error);">' +
             '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>' +
         '</div>' +
       '</div>';
@@ -243,7 +243,7 @@ function renderAdminClientsTab() {
         '<div class="user-card-actions">' +
           '<button class="btn btn-ghost btn-sm" onclick="openEditClient(\'' + client.id + '\')" title="Düzenle">' +
             '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>' +
-          '<button class="btn btn-ghost btn-sm" onclick="confirmDelete(\'' + client.id + '\',\'' + esc(client.full_name) + '\',\'client\')" title="Sil" style="color:var(--color-error);">' +
+          '<button class="btn btn-ghost btn-sm" onclick="confirmDelete(\'' + client.id + '\',\'' + escAttr(client.full_name) + '\',\'client\')" title="Sil" style="color:var(--color-error);">' +
             '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>' +
         '</div>' +
       '</div>';
@@ -778,7 +778,7 @@ async function renderExpertView() {
             '<div class="user-card-detail">' + noteCount + ' seans notu</div>' +
           '</div>' +
           '<div class="user-card-actions">' +
-            '<button class="btn btn-primary btn-sm" onclick="startVideoCall(\'' + esc(client.id) + '\',\'' + esc(client.full_name) + '\')">' +
+            '<button class="btn btn-primary btn-sm" onclick="startVideoCall(\'' + escAttr(client.id) + '\',\'' + escAttr(client.full_name) + '\')">' +
               '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg> Görüşme</button>' +
             '<button class="btn btn-ghost btn-sm" onclick="showClientDetail(\'' + client.id + '\')">' +
               '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Notlar</button>' +
@@ -843,7 +843,7 @@ async function showClientDetail(clientId) {
     '<div class="detail-header">' +
       '<div class="detail-avatar">' + getInitials(client.full_name) + '</div>' +
       '<div class="detail-info"><h2>' + esc(client.full_name) + '</h2><p>' + esc(client.email) + (client.phone ? ' — ' + esc(client.phone) : '') + '</p></div>' +
-      '<button class="btn btn-primary btn-sm" onclick="startVideoCall(\'' + esc(client.id) + '\',\'' + esc(client.full_name) + '\')" style="margin-left:auto;">' +
+      '<button class="btn btn-primary btn-sm" onclick="startVideoCall(\'' + escAttr(client.id) + '\',\'' + escAttr(client.full_name) + '\')" style="margin-left:auto;">' +
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg> Görüşme</button>' +
     '</div>' +
     '<div class="notes-section">' +
@@ -923,7 +923,7 @@ async function renderClientView() {
           '<div class="user-card-avatar expert-avatar" style="width:56px;height:56px;font-size:var(--text-lg);">' + getInitials(expert.full_name) + '</div>' +
           '<div><div style="font-weight:600;font-size:var(--text-base);">' + esc(expert.full_name) + '</div><div style="font-size:var(--text-sm);color:var(--color-text-muted);">' + esc(expert.specialty || "") + '</div></div>' +
         '</div>' +
-        '<button class="btn btn-primary btn-full" onclick="startVideoCall(\'' + esc(expert.id) + '\',\'' + esc(expert.full_name) + '\')">' +
+        '<button class="btn btn-primary btn-full" onclick="startVideoCall(\'' + escAttr(expert.id) + '\',\'' + escAttr(expert.full_name) + '\')">' +
           '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg> Görüntülü Görüşme Başlat</button>' +
       '</div>';
 
@@ -1040,6 +1040,11 @@ function esc(str) {
   var div = document.createElement("div");
   div.appendChild(document.createTextNode(str || ""));
   return div.innerHTML;
+}
+
+function escAttr(str) {
+  // Escape for use inside onclick='...' attributes (handles quotes)
+  return (str || "").replace(/&/g, "&amp;").replace(/'/g, "&#39;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function formatDate(dateStr) {
