@@ -1077,3 +1077,183 @@ select.form-input {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ========= SESSION / CALENDAR ========= */
+.session-list {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.session-list-compact {
+  gap: var(--space-2);
+}
+
+.session-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-xl);
+  transition: all var(--transition-interactive);
+}
+
+.session-card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--color-primary-highlight);
+}
+
+.session-card.session-past {
+  opacity: 0.55;
+  background: var(--color-surface-2);
+}
+
+.session-card-compact {
+  padding: var(--space-3) var(--space-4);
+}
+
+.session-card-date {
+  flex-shrink: 0;
+  min-width: 88px;
+  text-align: center;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-primary-light);
+  border-radius: var(--radius-lg);
+}
+
+.session-day {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-primary);
+  margin-bottom: 2px;
+}
+
+.session-time {
+  font-size: var(--text-xs);
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.session-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.session-names {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  margin-bottom: var(--space-1);
+}
+
+.session-names svg {
+  color: var(--color-text-faint);
+  flex-shrink: 0;
+}
+
+.session-expert {
+  color: var(--color-secondary);
+  font-weight: 600;
+}
+
+.session-client {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.session-notes-preview {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40ch;
+}
+
+.session-card-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.session-actions {
+  display: flex;
+  gap: var(--space-1);
+}
+
+/* Session status badges */
+.session-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-3);
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.session-status-planned {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+.session-status-completed {
+  background: var(--color-success-light);
+  color: var(--color-success);
+}
+
+.session-status-cancelled {
+  background: var(--color-error-light);
+  color: var(--color-error);
+}
+
+/* Upcoming sessions section */
+.upcoming-sessions-section {
+  margin-top: var(--space-8);
+}
+
+.no-sessions-msg {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  padding: var(--space-4) 0;
+}
+
+/* Session modal textarea */
+textarea.form-input {
+  resize: vertical;
+  min-height: 72px;
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+/* Responsive session cards */
+@media (max-width: 640px) {
+  .session-card {
+    flex-wrap: wrap;
+  }
+
+  .session-card-date {
+    min-width: 72px;
+  }
+
+  .session-card-right {
+    flex-direction: row;
+    align-items: center;
+    width: 100%;
+    justify-content: space-between;
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--color-divider);
+    margin-top: var(--space-2);
+  }
+
+  .session-notes-preview {
+    max-width: 28ch;
+  }
+}
