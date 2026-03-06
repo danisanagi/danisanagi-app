@@ -303,6 +303,11 @@ function openEditExpert(id) {
   openModal("expertModal");
 }
 
+async function getAuthToken() {
+  var session = await sb.auth.getSession();
+  return session.data.session ? session.data.session.access_token : "";
+}
+
 async function saveExpert() {
   var name = document.getElementById("expertName").value.trim();
   var email = document.getElementById("expertEmail").value.trim();
@@ -316,7 +321,7 @@ async function saveExpert() {
   }
 
   if (editingId) {
-    // Update profile
+    // Update profile (direct Supabase — no auth conflict)
     var upd = await sb.from("profiles").update({
       full_name: name,
       specialty: specialty,
@@ -331,21 +336,28 @@ async function saveExpert() {
       showToast("Şifre en az 6 karakter olmalıdır.");
       return;
     }
-    // Create auth user via Supabase Admin (using service role would be ideal, but we use client approach)
-    var signUp = await sb.auth.signUp({ email: email, password: password });
-    if (signUp.error) { showToast("Hesap oluşturulamadı: " + signUp.error.message); return; }
-
-    var userId = signUp.data.user.id;
-    var ins = await sb.from("profiles").insert({
-      id: userId,
-      email: email,
-      full_name: name,
-      role: "expert",
-      specialty: specialty,
-      phone: phone
+    // Create user via serverless API (service_role on backend)
+    var token = await getAuthToken();
+    var res = await fetch("/api/create-user", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + token
+      },
+      body: JSON.stringify({
+        email: email,
+        password: password,
+        full_name: name,
+        role: "expert",
+        specialty: specialty,
+        phone: phone
+      })
     });
-
-    if (ins.error) { showToast("Profil oluşturulamadı: " + ins.error.message); return; }
+    var data = await res.json();
+    if (!res.ok || !data.success) {
+      showToast(data.error || "Uzman eklenemedi.");
+      return;
+    }
     showToast("Uzman eklendi");
   }
 
@@ -426,21 +438,27 @@ async function saveClient() {
       showToast("Şifre en az 6 karakter olmalıdır.");
       return;
     }
-    var signUp = await sb.auth.signUp({ email: email, password: password });
-    if (signUp.error) { showToast("Hesap oluşturulamadı: " + signUp.error.message); return; }
-
-    var userId = signUp.data.user.id;
-    var ins = await sb.from("profiles").insert({
-      id: userId,
-      email: email,
-      full_name: name,
-      role: "client",
-      phone: phone
+    // Create user via serverless API (service_role on backend)
+    var token = await getAuthToken();
+    var res = await fetch("/api/create-user", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + token
+      },
+      body: JSON.stringify({
+        email: email,
+        password: password,
+        full_name: name,
+        role: "client",
+        phone: phone,
+        expert_id: expertId
+      })
     });
-    if (ins.error) { showToast("Profil oluşturulamadı: " + ins.error.message); return; }
-
-    if (expertId) {
-      await sb.from("assignments").insert({ expert_id: expertId, client_id: userId });
+    var data = await res.json();
+    if (!res.ok || !data.success) {
+      showToast(data.error || "Danışan eklenemedi.");
+      return;
     }
     showToast("Danışan eklendi");
   }
@@ -458,16 +476,22 @@ function confirmDelete(id, name, type) {
 }
 
 async function deleteUser(id, type) {
-  // Delete assignments
-  if (type === "expert") {
-    await sb.from("assignments").delete().eq("expert_id", id);
-    await sb.from("notes").delete().eq("expert_id", id);
-  } else {
-    await sb.from("assignments").delete().eq("client_id", id);
-    await sb.from("notes").delete().eq("client_id", id);
+  // Delete via serverless API (also removes auth user)
+  var token = await getAuthToken();
+  var res = await fetch("/api/delete-user", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + token
+    },
+    body: JSON.stringify({ user_id: id })
+  });
+  var data = await res.json();
+  if (!res.ok || !data.success) {
+    showToast(data.error || "Silinemedi.");
+    closeModal("confirmModal");
+    return;
   }
-  // Delete profile
-  await sb.from("profiles").delete().eq("id", id);
   closeModal("confirmModal");
   showToast(type === "expert" ? "Uzman silindi" : "Danışan silindi");
   renderAdminView();
