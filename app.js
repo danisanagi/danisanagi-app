@@ -129,11 +129,13 @@ async function renderAdminView() {
   var clientsRes = await sb.from("profiles").select("*").eq("role", "client").order("full_name");
   var assignRes = await sb.from("assignments").select("*");
   var notesRes = await sb.from("notes").select("*");
+  var sessionsRes = await sb.from("scheduled_sessions").select("*").order("session_date").order("start_time");
 
   var experts = expertsRes.data || [];
   var clients = clientsRes.data || [];
   var assignments = assignRes.data || [];
   var notes = notesRes.data || [];
+  var scheduledSessions = sessionsRes.data || [];
 
   var totalExperts = experts.length;
   var totalClients = clients.length;
@@ -151,11 +153,12 @@ async function renderAdminView() {
       '<button class="tab-btn active" onclick="switchAdminTab(\'experts\',this)">Uzmanlar</button>' +
       '<button class="tab-btn" onclick="switchAdminTab(\'clients\',this)">Danışanlar</button>' +
       '<button class="tab-btn" onclick="switchAdminTab(\'notes\',this)">Seans Notları</button>' +
+      '<button class="tab-btn" onclick="switchAdminTab(\'calendar\',this)">Takvim</button>' +
     '</div>' +
     '<div id="adminTabContent"></div>';
 
   // Store data for tab rendering
-  window._adminData = { experts: experts, clients: clients, assignments: assignments, notes: notes };
+  window._adminData = { experts: experts, clients: clients, assignments: assignments, notes: notes, scheduledSessions: scheduledSessions };
   renderAdminExpertsTab();
 }
 
@@ -164,6 +167,7 @@ function switchAdminTab(tab, btn) {
   btn.classList.add("active");
   if (tab === "experts") renderAdminExpertsTab();
   else if (tab === "clients") renderAdminClientsTab();
+  else if (tab === "calendar") renderAdminCalendarTab();
   else renderAdminNotesTab();
 }
 
@@ -271,6 +275,192 @@ async function renderAdminNotesTab() {
   }
 
   container.innerHTML = html;
+}
+
+// ==================== ADMIN CALENDAR TAB ====================
+function renderAdminCalendarTab() {
+  var d = window._adminData;
+  var container = document.getElementById("adminTabContent");
+  var today = new Date().toISOString().split("T")[0];
+
+  var html =
+    '<div class="page-header">' +
+      '<h2 class="section-title">Takvim</h2>' +
+      '<button class="btn btn-primary" onclick="openAddSession()">' +
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>' +
+        'Seans Planla</button>' +
+    '</div>';
+
+  if (!d.scheduledSessions || d.scheduledSessions.length === 0) {
+    html += '<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg><h3>Planlanmış seans yok</h3><p>Yeni bir seans planlamak için "Seans Planla" butonuna tıklayın.</p></div>';
+  } else {
+    var sorted = d.scheduledSessions.slice().sort(function(a, b) {
+      return (a.session_date + a.start_time).localeCompare(b.session_date + b.start_time);
+    });
+
+    html += '<div class="session-list">';
+    sorted.forEach(function(sess) {
+      var expert = d.experts.find(function(e) { return e.id === sess.expert_id; });
+      var client = d.clients.find(function(c) { return c.id === sess.client_id; });
+      var isPast = sess.session_date < today;
+      var statusClass = sess.status === "completed" ? "session-status-completed" : sess.status === "cancelled" ? "session-status-cancelled" : "session-status-planned";
+      var statusLabel = sess.status === "completed" ? "Tamamlandı" : sess.status === "cancelled" ? "İptal" : "Planlandı";
+
+      html +=
+        '<div class="session-card' + (isPast ? " session-past" : "") + '">' +
+          '<div class="session-card-date">' +
+            '<div class="session-day">' + formatSessionDate(sess.session_date) + '</div>' +
+            '<div class="session-time">' + sess.start_time.substring(0, 5) + ' – ' + sess.end_time.substring(0, 5) + '</div>' +
+          '</div>' +
+          '<div class="session-card-info">' +
+            '<div class="session-names">' +
+              '<span class="session-expert">' + esc(expert ? expert.full_name : "?") + '</span>' +
+              '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>' +
+              '<span class="session-client">' + esc(client ? client.full_name : "?") + '</span>' +
+            '</div>' +
+            (sess.notes ? '<div class="session-notes-preview">' + esc(sess.notes) + '</div>' : '') +
+          '</div>' +
+          '<div class="session-card-right">' +
+            '<span class="session-status ' + statusClass + '">' + statusLabel + '</span>' +
+            '<div class="session-actions">' +
+              '<button class="btn btn-ghost btn-sm" onclick="openEditSession(' + sess.id + ')" title="Düzenle">' +
+                '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>' +
+              '<button class="btn btn-ghost btn-sm" onclick="confirmDeleteSession(' + sess.id + ')" title="Sil" style="color:var(--color-error);">' +
+                '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+    });
+    html += '</div>';
+  }
+
+  container.innerHTML = html;
+}
+
+// ==================== SESSION MODAL (ADMIN) ====================
+var editingSessionId = null;
+
+function openAddSession() {
+  editingSessionId = null;
+  document.getElementById("sessionModalTitle").textContent = "Seans Planla";
+  document.getElementById("sessionDate").value = "";
+  document.getElementById("sessionStartTime").value = "";
+  document.getElementById("sessionEndTime").value = "";
+  document.getElementById("sessionNotes").value = "";
+  document.getElementById("sessionStatus").value = "planned";
+  populateSessionExpertSelect("");
+  populateSessionClientSelect("", "");
+  openModal("sessionModal");
+}
+
+function openEditSession(id) {
+  var d = window._adminData;
+  var sess = (d.scheduledSessions || []).find(function(s) { return s.id === id; });
+  if (!sess) return;
+  editingSessionId = id;
+  document.getElementById("sessionModalTitle").textContent = "Seans Düzenle";
+  document.getElementById("sessionDate").value = sess.session_date;
+  document.getElementById("sessionStartTime").value = sess.start_time.substring(0, 5);
+  document.getElementById("sessionEndTime").value = sess.end_time.substring(0, 5);
+  document.getElementById("sessionNotes").value = sess.notes || "";
+  document.getElementById("sessionStatus").value = sess.status || "planned";
+  populateSessionExpertSelect(sess.expert_id);
+  populateSessionClientSelect(sess.expert_id, sess.client_id);
+  openModal("sessionModal");
+}
+
+function populateSessionExpertSelect(selectedId) {
+  var select = document.getElementById("sessionExpertSelect");
+  select.innerHTML = '<option value="">Uzman seçiniz</option>';
+  (window._adminData ? window._adminData.experts : []).forEach(function(e) {
+    var sel = e.id === selectedId ? " selected" : "";
+    select.innerHTML += '<option value="' + e.id + '"' + sel + '>' + esc(e.full_name) + '</option>';
+  });
+}
+
+function populateSessionClientSelect(expertId, selectedClientId) {
+  var select = document.getElementById("sessionClientSelect");
+  var d = window._adminData;
+  var clients = d ? d.clients : [];
+
+  // If expert is selected, ideally filter by assigned clients; fall back to all clients
+  if (expertId && d) {
+    var assignedIds = d.assignments.filter(function(a) { return a.expert_id === expertId; }).map(function(a) { return a.client_id; });
+    var filtered = clients.filter(function(c) { return assignedIds.indexOf(c.id) !== -1; });
+    // If expert has no assigned clients, show all
+    if (filtered.length > 0) clients = filtered;
+  }
+
+  select.innerHTML = '<option value="">Danışan seçiniz</option>';
+  clients.forEach(function(c) {
+    var sel = c.id === selectedClientId ? " selected" : "";
+    select.innerHTML += '<option value="' + c.id + '"' + sel + '>' + esc(c.full_name) + '</option>';
+  });
+}
+
+async function saveSession() {
+  var expertId = document.getElementById("sessionExpertSelect").value;
+  var clientId = document.getElementById("sessionClientSelect").value;
+  var date = document.getElementById("sessionDate").value;
+  var startTime = document.getElementById("sessionStartTime").value;
+  var endTime = document.getElementById("sessionEndTime").value;
+  var notes = document.getElementById("sessionNotes").value.trim();
+  var status = document.getElementById("sessionStatus").value;
+
+  if (!expertId || !clientId || !date || !startTime || !endTime) {
+    showToast("Uzman, danışan, tarih ve saat zorunludur.");
+    return;
+  }
+
+  if (startTime >= endTime) {
+    showToast("Bitiş saati başlangıç saatinden sonra olmalıdır.");
+    return;
+  }
+
+  var payload = {
+    expert_id: expertId,
+    client_id: clientId,
+    session_date: date,
+    start_time: startTime,
+    end_time: endTime,
+    notes: notes || null,
+    status: status,
+    updated_at: new Date().toISOString()
+  };
+
+  var res;
+  if (editingSessionId) {
+    res = await sb.from("scheduled_sessions").update(payload).eq("id", editingSessionId);
+  } else {
+    res = await sb.from("scheduled_sessions").insert(payload);
+  }
+
+  if (res.error) {
+    showToast("Hata: " + res.error.message);
+    return;
+  }
+
+  showToast(editingSessionId ? "Seans güncellendi" : "Seans planlandı");
+  closeModal("sessionModal");
+  renderAdminView();
+}
+
+function confirmDeleteSession(id) {
+  document.getElementById("confirmMessage").textContent = "Bu seansı silmek istediğinize emin misiniz?";
+  document.getElementById("confirmDeleteBtn").onclick = function() { deleteSession(id); };
+  openModal("confirmModal");
+}
+
+async function deleteSession(id) {
+  var res = await sb.from("scheduled_sessions").delete().eq("id", id);
+  if (res.error) {
+    showToast("Hata: " + res.error.message);
+    closeModal("confirmModal");
+    return;
+  }
+  closeModal("confirmModal");
+  showToast("Seans silindi");
+  renderAdminView();
 }
 
 // ==================== EXPERT CRUD ====================
@@ -554,6 +744,16 @@ async function renderExpertView() {
   var assignRes = await sb.from("assignments").select("*, client:client_id(id, full_name, email, phone)").eq("expert_id", currentProfile.id);
   var assignments = assignRes.data || [];
 
+  // Load upcoming sessions for this expert
+  var today = new Date().toISOString().split("T")[0];
+  var sessionsRes = await sb.from("scheduled_sessions")
+    .select("*, client:client_id(id, full_name)")
+    .eq("expert_id", currentProfile.id)
+    .gte("session_date", today)
+    .order("session_date")
+    .order("start_time");
+  var upcomingSessions = sessionsRes.data || [];
+
   var html =
     '<div class="page-header">' +
       '<h2 class="page-title">Danışanlarım</h2>' +
@@ -578,7 +778,7 @@ async function renderExpertView() {
             '<div class="user-card-detail">' + noteCount + ' seans notu</div>' +
           '</div>' +
           '<div class="user-card-actions">' +
-            '<button class="btn btn-primary btn-sm" onclick="startVideoCall(\'' + esc(client.full_name) + '\')">' +
+            '<button class="btn btn-primary btn-sm" onclick="startVideoCall(\'' + esc(client.id) + '\',\'' + esc(client.full_name) + '\')">' +
               '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg> Görüşme</button>' +
             '<button class="btn btn-ghost btn-sm" onclick="showClientDetail(\'' + client.id + '\')">' +
               '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Notlar</button>' +
@@ -588,6 +788,35 @@ async function renderExpertView() {
     html += '</div>';
   }
 
+  // Upcoming sessions section
+  html += '<div class="upcoming-sessions-section">';
+  html += '<h3 class="section-title" style="margin-top:var(--space-8);">Yaklaşan Seanslar</h3>';
+
+  if (upcomingSessions.length === 0) {
+    html += '<p class="no-sessions-msg">Yaklaşan planlanmış seans bulunmuyor.</p>';
+  } else {
+    html += '<div class="session-list session-list-compact">';
+    upcomingSessions.forEach(function(sess) {
+      var clientName = sess.client ? sess.client.full_name : "?";
+      var statusClass = sess.status === "completed" ? "session-status-completed" : sess.status === "cancelled" ? "session-status-cancelled" : "session-status-planned";
+      var statusLabel = sess.status === "completed" ? "Tamamlandı" : sess.status === "cancelled" ? "İptal" : "Planlandı";
+      html +=
+        '<div class="session-card session-card-compact">' +
+          '<div class="session-card-date">' +
+            '<div class="session-day">' + formatSessionDate(sess.session_date) + '</div>' +
+            '<div class="session-time">' + sess.start_time.substring(0, 5) + ' – ' + sess.end_time.substring(0, 5) + '</div>' +
+          '</div>' +
+          '<div class="session-card-info">' +
+            '<div class="session-names"><span class="session-client">' + esc(clientName) + '</span></div>' +
+            (sess.notes ? '<div class="session-notes-preview">' + esc(sess.notes) + '</div>' : '') +
+          '</div>' +
+          '<span class="session-status ' + statusClass + '">' + statusLabel + '</span>' +
+        '</div>';
+    });
+    html += '</div>';
+  }
+
+  html += '</div>';
   html += '<div id="clientDetailView" class="detail-view"></div>';
   main.innerHTML = html;
 }
@@ -600,7 +829,10 @@ async function showClientDetail(clientId) {
   var notesRes = await sb.from("notes").select("*").eq("expert_id", currentProfile.id).eq("client_id", clientId).order("created_at", { ascending: false });
   var notes = notesRes.data || [];
 
-  document.getElementById("expertClientList").style.display = "none";
+  var expertClientList = document.getElementById("expertClientList");
+  if (expertClientList) expertClientList.style.display = "none";
+  var upcomingSection = document.querySelector(".upcoming-sessions-section");
+  if (upcomingSection) upcomingSection.style.display = "none";
   document.querySelector(".page-header").style.display = "none";
   var detailEl = document.getElementById("clientDetailView");
   detailEl.classList.add("active");
@@ -611,7 +843,7 @@ async function showClientDetail(clientId) {
     '<div class="detail-header">' +
       '<div class="detail-avatar">' + getInitials(client.full_name) + '</div>' +
       '<div class="detail-info"><h2>' + esc(client.full_name) + '</h2><p>' + esc(client.email) + (client.phone ? ' — ' + esc(client.phone) : '') + '</p></div>' +
-      '<button class="btn btn-primary btn-sm" onclick="startVideoCall(\'' + esc(client.full_name) + '\')" style="margin-left:auto;">' +
+      '<button class="btn btn-primary btn-sm" onclick="startVideoCall(\'' + esc(client.id) + '\',\'' + esc(client.full_name) + '\')" style="margin-left:auto;">' +
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg> Görüşme</button>' +
     '</div>' +
     '<div class="notes-section">' +
@@ -634,7 +866,10 @@ async function showClientDetail(clientId) {
 }
 
 function backToExpertList() {
-  document.getElementById("expertClientList").style.display = "grid";
+  var expertClientList = document.getElementById("expertClientList");
+  if (expertClientList) expertClientList.style.display = "grid";
+  var upcomingSection = document.querySelector(".upcoming-sessions-section");
+  if (upcomingSection) upcomingSection.style.display = "";
   document.querySelector(".page-header").style.display = "flex";
   var detailEl = document.getElementById("clientDetailView");
   detailEl.classList.remove("active");
@@ -665,6 +900,16 @@ async function renderClientView() {
   var assignRes = await sb.from("assignments").select("*, expert:expert_id(id, full_name, specialty, email)").eq("client_id", currentProfile.id);
   var assignment = (assignRes.data || [])[0];
 
+  // Load upcoming sessions for this client
+  var today = new Date().toISOString().split("T")[0];
+  var sessionsRes = await sb.from("scheduled_sessions")
+    .select("*, expert:expert_id(id, full_name)")
+    .eq("client_id", currentProfile.id)
+    .gte("session_date", today)
+    .order("session_date")
+    .order("start_time");
+  var upcomingSessions = sessionsRes.data || [];
+
   var html = '<div class="page-header"><h2 class="page-title">Hoş Geldiniz, ' + esc(currentProfile.full_name.split(" ")[0]) + '</h2></div>';
 
   if (!assignment || !assignment.expert) {
@@ -678,31 +923,68 @@ async function renderClientView() {
           '<div class="user-card-avatar expert-avatar" style="width:56px;height:56px;font-size:var(--text-lg);">' + getInitials(expert.full_name) + '</div>' +
           '<div><div style="font-weight:600;font-size:var(--text-base);">' + esc(expert.full_name) + '</div><div style="font-size:var(--text-sm);color:var(--color-text-muted);">' + esc(expert.specialty || "") + '</div></div>' +
         '</div>' +
-        '<button class="btn btn-primary btn-full" onclick="startVideoCall(\'' + esc(expert.full_name) + '\')">' +
+        '<button class="btn btn-primary btn-full" onclick="startVideoCall(\'' + esc(expert.id) + '\',\'' + esc(expert.full_name) + '\')">' +
           '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg> Görüntülü Görüşme Başlat</button>' +
       '</div>';
+
+    // Upcoming sessions for client
+    html += '<div class="upcoming-sessions-section" style="max-width:480px;margin-top:var(--space-6);">';
+    html += '<h3 class="section-title">Yaklaşan Seanslar</h3>';
+
+    if (upcomingSessions.length === 0) {
+      html += '<p class="no-sessions-msg">Yaklaşan planlanmış seans bulunmuyor.</p>';
+    } else {
+      html += '<div class="session-list session-list-compact">';
+      upcomingSessions.forEach(function(sess) {
+        var expertName = sess.expert ? sess.expert.full_name : "?";
+        var statusClass = sess.status === "completed" ? "session-status-completed" : sess.status === "cancelled" ? "session-status-cancelled" : "session-status-planned";
+        var statusLabel = sess.status === "completed" ? "Tamamlandı" : sess.status === "cancelled" ? "İptal" : "Planlandı";
+        html +=
+          '<div class="session-card session-card-compact">' +
+            '<div class="session-card-date">' +
+              '<div class="session-day">' + formatSessionDate(sess.session_date) + '</div>' +
+              '<div class="session-time">' + sess.start_time.substring(0, 5) + ' – ' + sess.end_time.substring(0, 5) + '</div>' +
+            '</div>' +
+            '<div class="session-card-info">' +
+              '<div class="session-names"><span class="session-expert">' + esc(expertName) + '</span></div>' +
+            '</div>' +
+            '<span class="session-status ' + statusClass + '">' + statusLabel + '</span>' +
+          '</div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
   }
 
   main.innerHTML = html;
 }
 
-// ==================== VIDEO CALL (Jitsi) ====================
+// ==================== VIDEO CALL (Jitsi — meet.jit.si FREE server) ====================
 var jitsiApi = null;
 
-function startVideoCall(remoteName) {
-  var roomName = "danisanagi-" + currentProfile.id.substring(0, 8) + "-" + Date.now();
+function startVideoCall(remoteId, remoteName) {
+  // Build a stable room name based on the two participant IDs (sorted for consistency)
+  var ids = [currentProfile.id.substring(0, 8), (remoteId || "").substring(0, 8)].sort();
+  var roomName = "danisanagi-" + ids.join("-");
+
   document.getElementById("videoCallScreen").classList.add("active");
 
-  // Load Jitsi IFrame API
+  // Remove any previously injected Jitsi script to avoid conflicts
+  var oldScript = document.getElementById("jitsiScript");
+  if (oldScript) oldScript.remove();
+
+  // Load meet.jit.si External API
   var container = document.getElementById("jitsiContainer");
   container.innerHTML = "";
 
   var script = document.createElement("script");
-  script.src = "https://8x8.vc/vpaas-magic-cookie-30location/external_api.js";
+  script.id = "jitsiScript";
+  script.src = "https://meet.jit.si/external_api.js";
+
   script.onload = function() {
     /* global JitsiMeetExternalAPI */
-    jitsiApi = new JitsiMeetExternalAPI("8x8.vc", {
-      roomName: "vpaas-magic-cookie-30location/" + roomName,
+    jitsiApi = new JitsiMeetExternalAPI("meet.jit.si", {
+      roomName: roomName,
       parentNode: container,
       width: "100%",
       height: "100%",
@@ -713,14 +995,10 @@ function startVideoCall(remoteName) {
         startWithAudioMuted: false,
         startWithVideoMuted: false,
         prejoinPageEnabled: false,
-        disableDeepLinking: true,
-        toolbarButtons: ["microphone", "camera", "desktop", "chat", "raisehand", "hangup"],
-        defaultLanguage: "tr"
+        disableDeepLinking: true
       },
       interfaceConfigOverwrite: {
         SHOW_JITSI_WATERMARK: false,
-        SHOW_WATERMARK_FOR_GUESTS: false,
-        SHOW_BRAND_WATERMARK: false,
         TOOLBAR_ALWAYS_VISIBLE: true
       }
     });
@@ -731,7 +1009,7 @@ function startVideoCall(remoteName) {
   };
 
   script.onerror = function() {
-    // Fallback: open Jitsi in new tab
+    // Fallback: open meet.jit.si in new tab
     container.innerHTML =
       '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#fff;text-align:center;padding:var(--space-8);">' +
         '<p style="margin-bottom:var(--space-4);">Jitsi yüklenemedi. Görüşmeyi yeni sekmede açabilirsiniz:</p>' +
@@ -740,7 +1018,7 @@ function startVideoCall(remoteName) {
   };
 
   document.head.appendChild(script);
-  showToast(remoteName + " ile görüşme odası oluşturuldu");
+  showToast((remoteName || "Karşı taraf") + " ile görüşme odası oluşturuldu");
 }
 
 function endVideoCall() {
@@ -769,6 +1047,15 @@ function formatDate(dateStr) {
   var months = ["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
   return d.getDate() + " " + months[d.getMonth()] + " " + d.getFullYear() + ", " +
     String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+}
+
+function formatSessionDate(dateStr) {
+  // dateStr is YYYY-MM-DD
+  var parts = dateStr.split("-");
+  var d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+  var days = ["Paz","Pzt","Sal","Çar","Per","Cum","Cmt"];
+  var months = ["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
+  return days[d.getDay()] + " " + d.getDate() + " " + months[d.getMonth()];
 }
 
 function showToast(message) {
