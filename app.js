@@ -197,12 +197,20 @@ function renderAdminExpertsTab() {
       var ce = expert.contract_end ? formatSessionDate(expert.contract_end) : '?';
       contractInfo = '<div class="user-card-detail" style="font-size:11px;color:var(--color-text-faint);">Sözleşme: ' + cs + ' – ' + ce + '</div>';
     }
+    var areasHtml = '';
+    if (expert.areas_of_expertise) {
+      var areasList = expert.areas_of_expertise.split(',').map(function(a) { return a.trim(); }).filter(function(a) { return a; });
+      if (areasList.length > 0) {
+        areasHtml = '<div class="expert-areas">' + areasList.map(function(a) { return '<span class="area-tag">' + esc(a) + '</span>'; }).join('') + '</div>';
+      }
+    }
     html +=
       '<div class="user-card" data-name="' + expert.full_name.toLowerCase() + '">' +
         '<div class="user-card-avatar expert-avatar">' + getInitials(expert.full_name) + '</div>' +
         '<div class="user-card-info">' +
           '<div class="user-card-name">' + esc(expert.full_name) + '</div>' +
           '<div class="user-card-detail">' + esc(expert.specialty || "Belirtilmemiş") + ' — ' + clientCount + ' danışan</div>' +
+          areasHtml +
           contractInfo +
         '</div>' +
         '<div class="user-card-actions">' +
@@ -481,6 +489,7 @@ function openAddExpert() {
   document.getElementById("expertEmail").value = "";
   document.getElementById("expertPassword").value = "";
   document.getElementById("expertSpecialty").value = "";
+  document.getElementById("expertAreas").value = "";
   document.getElementById("expertPhone").value = "";
   document.getElementById("expertContractStart").value = "";
   document.getElementById("expertContractEnd").value = "";
@@ -501,6 +510,7 @@ function openEditExpert(id) {
   document.getElementById("expertPassword").style.display = "none";
   document.getElementById("expertPasswordHint").style.display = "none";
   document.getElementById("expertSpecialty").value = expert.specialty || "";
+  document.getElementById("expertAreas").value = expert.areas_of_expertise || "";
   document.getElementById("expertPhone").value = expert.phone || "";
   document.getElementById("expertContractStart").value = expert.contract_start || "";
   document.getElementById("expertContractEnd").value = expert.contract_end || "";
@@ -517,6 +527,7 @@ async function saveExpert() {
   var email = document.getElementById("expertEmail").value.trim();
   var password = document.getElementById("expertPassword").value.trim();
   var specialty = document.getElementById("expertSpecialty").value.trim();
+  var areas = document.getElementById("expertAreas").value.trim();
   var phone = document.getElementById("expertPhone").value.trim();
   var contractStart = document.getElementById("expertContractStart").value || null;
   var contractEnd = document.getElementById("expertContractEnd").value || null;
@@ -531,6 +542,7 @@ async function saveExpert() {
     var upd = await sb.from("profiles").update({
       full_name: name,
       specialty: specialty,
+      areas_of_expertise: areas || null,
       phone: phone,
       contract_start: contractStart,
       contract_end: contractEnd,
@@ -558,6 +570,7 @@ async function saveExpert() {
         full_name: name,
         role: "expert",
         specialty: specialty,
+        areas_of_expertise: areas || null,
         phone: phone
       })
     });
@@ -939,7 +952,7 @@ async function renderClientView() {
         '<div class="card-header"><h3 class="card-title">Uzmanınız</h3></div>' +
         '<div style="display:flex;align-items:center;gap:var(--space-4);margin-bottom:var(--space-5);">' +
           '<div class="user-card-avatar expert-avatar" style="width:56px;height:56px;font-size:var(--text-lg);">' + getInitials(expert.full_name) + '</div>' +
-          '<div><div style="font-weight:600;font-size:var(--text-base);">' + esc(expert.full_name) + '</div><div style="font-size:var(--text-sm);color:var(--color-text-muted);">' + esc(expert.specialty || "") + '</div></div>' +
+          '<div><div style="font-weight:600;font-size:var(--text-base);">' + esc(expert.full_name) + '</div><div style="font-size:var(--text-sm);color:var(--color-text-muted);">' + esc(expert.specialty || "") + '</div>' + (expert.areas_of_expertise ? '<div class="expert-areas" style="margin-top:4px;">' + expert.areas_of_expertise.split(",").map(function(a){return '<span class="area-tag">' + esc(a.trim()) + '</span>';}).join("") + '</div>' : '') + '</div>' +
         '</div>' +
         '<button class="btn btn-primary btn-full" onclick="startVideoCall(\'' + escAttr(expert.id) + '\',\'' + escAttr(expert.full_name) + '\')">' +
           '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg> Görüntülü Görüşme Başlat</button>' +
@@ -1912,7 +1925,7 @@ renderClientView = async function() {
         '<div class="card-header"><h3 class="card-title">Uzmanınız</h3></div>' +
         '<div style="display:flex;align-items:center;gap:var(--space-4);margin-bottom:var(--space-5);">' +
           '<div class="user-card-avatar expert-avatar" style="width:56px;height:56px;font-size:var(--text-lg);">' + getInitials(expert.full_name) + '</div>' +
-          '<div><div style="font-weight:600;font-size:var(--text-base);">' + esc(expert.full_name) + '</div><div style="font-size:var(--text-sm);color:var(--color-text-muted);">' + esc(expert.specialty || "") + '</div></div>' +
+          '<div><div style="font-weight:600;font-size:var(--text-base);">' + esc(expert.full_name) + '</div><div style="font-size:var(--text-sm);color:var(--color-text-muted);">' + esc(expert.specialty || "") + '</div>' + (expert.areas_of_expertise ? '<div class="expert-areas" style="margin-top:4px;">' + expert.areas_of_expertise.split(",").map(function(a){return '<span class="area-tag">' + esc(a.trim()) + '</span>';}).join("") + '</div>' : '') + '</div>' +
         '</div>' +
         '<div style="display:flex;gap:var(--space-3);">' +
           '<button class="btn btn-primary" style="flex:1;" onclick="startVideoCall(\'' + escAttr(expert.id) + '\',\'' + escAttr(expert.full_name) + '\')">' +
@@ -1959,21 +1972,24 @@ function openMyProfile() {
   document.getElementById("myProfileName").value = currentProfile.full_name || "";
   document.getElementById("myProfileEmail").value = currentProfile.email || "";
   document.getElementById("myProfileSpecialty").value = currentProfile.specialty || "";
+  document.getElementById("myProfileAreas").value = currentProfile.areas_of_expertise || "";
   document.getElementById("myProfilePhone").value = currentProfile.phone || "";
   openModal("expertProfileModal");
 }
 
 async function saveMyProfile() {
   var specialty = document.getElementById("myProfileSpecialty").value.trim();
+  var areas = document.getElementById("myProfileAreas").value.trim();
   var phone = document.getElementById("myProfilePhone").value.trim();
 
   if (!specialty) {
-    showToast("Uzmanlık alanı boş bırakılamaz.");
+    showToast("Unvan boş bırakılamaz.");
     return;
   }
 
   var upd = await sb.from("profiles").update({
     specialty: specialty,
+    areas_of_expertise: areas || null,
     phone: phone,
     updated_at: new Date().toISOString()
   }).eq("id", currentProfile.id);
@@ -1985,6 +2001,7 @@ async function saveMyProfile() {
 
   // Update local profile
   currentProfile.specialty = specialty;
+  currentProfile.areas_of_expertise = areas || null;
   currentProfile.phone = phone;
 
   showToast("Profiliniz güncellendi");
