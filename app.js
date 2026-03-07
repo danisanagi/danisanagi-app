@@ -1640,7 +1640,7 @@ renderExpertView = async function() {
   }
 
     // Admin messages section
-  var adminRes = await sb.from("profiles").select("id, full_name").eq("role", "admin").limit(1).single();
+  var adminRes = await sb.from("profiles").select("id, full_name").eq("role", "admin").limit(1).maybeSingle();
   var admin = adminRes.data;
   if (admin) {
     var adminUnread = await getUnreadCount(admin.id);
