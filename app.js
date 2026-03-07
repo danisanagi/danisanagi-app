@@ -191,12 +191,19 @@ function renderAdminExpertsTab() {
 
   d.experts.forEach(function(expert) {
     var clientCount = d.assignments.filter(function(a) { return a.expert_id === expert.id; }).length;
+    var contractInfo = '';
+    if (expert.contract_start || expert.contract_end) {
+      var cs = expert.contract_start ? formatSessionDate(expert.contract_start) : '?';
+      var ce = expert.contract_end ? formatSessionDate(expert.contract_end) : '?';
+      contractInfo = '<div class="user-card-detail" style="font-size:11px;color:var(--color-text-faint);">Sözleşme: ' + cs + ' – ' + ce + '</div>';
+    }
     html +=
       '<div class="user-card" data-name="' + expert.full_name.toLowerCase() + '">' +
         '<div class="user-card-avatar expert-avatar">' + getInitials(expert.full_name) + '</div>' +
         '<div class="user-card-info">' +
           '<div class="user-card-name">' + esc(expert.full_name) + '</div>' +
           '<div class="user-card-detail">' + esc(expert.specialty || "Belirtilmemiş") + ' — ' + clientCount + ' danışan</div>' +
+          contractInfo +
         '</div>' +
         '<div class="user-card-actions">' +
           '<button class="btn btn-ghost btn-sm" onclick="openMessaging(\'' + escAttr(expert.id) + '\',\'' + escAttr(expert.full_name) + '\')" title="Mesaj">' +
@@ -475,6 +482,8 @@ function openAddExpert() {
   document.getElementById("expertPassword").value = "";
   document.getElementById("expertSpecialty").value = "";
   document.getElementById("expertPhone").value = "";
+  document.getElementById("expertContractStart").value = "";
+  document.getElementById("expertContractEnd").value = "";
   document.getElementById("expertPassword").style.display = "";
   document.getElementById("expertPasswordHint").style.display = "";
   document.getElementById("expertEmail").disabled = false;
@@ -493,6 +502,8 @@ function openEditExpert(id) {
   document.getElementById("expertPasswordHint").style.display = "none";
   document.getElementById("expertSpecialty").value = expert.specialty || "";
   document.getElementById("expertPhone").value = expert.phone || "";
+  document.getElementById("expertContractStart").value = expert.contract_start || "";
+  document.getElementById("expertContractEnd").value = expert.contract_end || "";
   openModal("expertModal");
 }
 
@@ -507,6 +518,8 @@ async function saveExpert() {
   var password = document.getElementById("expertPassword").value.trim();
   var specialty = document.getElementById("expertSpecialty").value.trim();
   var phone = document.getElementById("expertPhone").value.trim();
+  var contractStart = document.getElementById("expertContractStart").value || null;
+  var contractEnd = document.getElementById("expertContractEnd").value || null;
 
   if (!name || !email || !specialty) {
     showToast("Ad, e-posta ve uzmanlık alanı zorunludur.");
@@ -519,6 +532,8 @@ async function saveExpert() {
       full_name: name,
       specialty: specialty,
       phone: phone,
+      contract_start: contractStart,
+      contract_end: contractEnd,
       updated_at: new Date().toISOString()
     }).eq("id", editingId);
 
@@ -1753,7 +1768,11 @@ renderExpertView = async function() {
   var html =
     '<div class="page-header">' +
       '<h2 class="page-title">Danışanlarım</h2>' +
-      '<span class="badge badge-online">Çevrimiçi</span>' +
+      '<div style="display:flex;align-items:center;gap:var(--space-2);">' +
+        '<button class="btn btn-ghost btn-sm" onclick="openMyProfile()" title="Profilimi Düzenle">' +
+          '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> Profilim</button>' +
+        '<span class="badge badge-online">Çevrimiçi</span>' +
+      '</div>' +
     '</div>';
 
   if (assignments.length === 0) {
@@ -1934,3 +1953,41 @@ renderClientView = async function() {
 
   main.innerHTML = html;
 };
+
+// ==================== EXPERT PROFILE EDIT ====================
+function openMyProfile() {
+  document.getElementById("myProfileName").value = currentProfile.full_name || "";
+  document.getElementById("myProfileEmail").value = currentProfile.email || "";
+  document.getElementById("myProfileSpecialty").value = currentProfile.specialty || "";
+  document.getElementById("myProfilePhone").value = currentProfile.phone || "";
+  openModal("expertProfileModal");
+}
+
+async function saveMyProfile() {
+  var specialty = document.getElementById("myProfileSpecialty").value.trim();
+  var phone = document.getElementById("myProfilePhone").value.trim();
+
+  if (!specialty) {
+    showToast("Uzmanlık alanı boş bırakılamaz.");
+    return;
+  }
+
+  var upd = await sb.from("profiles").update({
+    specialty: specialty,
+    phone: phone,
+    updated_at: new Date().toISOString()
+  }).eq("id", currentProfile.id);
+
+  if (upd.error) {
+    showToast("Hata: " + upd.error.message);
+    return;
+  }
+
+  // Update local profile
+  currentProfile.specialty = specialty;
+  currentProfile.phone = phone;
+
+  showToast("Profiliniz güncellendi");
+  closeModal("expertProfileModal");
+  renderExpertView();
+}
