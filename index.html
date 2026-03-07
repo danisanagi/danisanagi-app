@@ -113,6 +113,16 @@
       <label>Telefon</label>
       <input type="tel" id="expertPhone" class="form-input" placeholder="0532 XXX XXXX">
     </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Sözleşme Başlangıcı</label>
+        <input type="date" id="expertContractStart" class="form-input">
+      </div>
+      <div class="form-group">
+        <label>Sözleşme Bitişi</label>
+        <input type="date" id="expertContractEnd" class="form-input">
+      </div>
+    </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('expertModal')">İptal</button>
       <button class="btn btn-primary" id="expertSaveBtn" onclick="saveExpert()">Kaydet</button>
@@ -264,6 +274,38 @@
       <button class="btn btn-primary btn-icon" onclick="sendMessage()" aria-label="Gönder">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
       </button>
+    </div>
+  </div>
+</div>
+
+<!-- Expert Profile Edit Modal -->
+<div id="expertProfileModal" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title">Profilimi Düzenle</h3>
+      <button class="modal-close" onclick="closeModal('expertProfileModal')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
+    </div>
+    <div class="form-group">
+      <label>Ad Soyad</label>
+      <input type="text" id="myProfileName" class="form-input" disabled style="opacity:0.6;">
+    </div>
+    <div class="form-group">
+      <label>E-posta</label>
+      <input type="email" id="myProfileEmail" class="form-input" disabled style="opacity:0.6;">
+    </div>
+    <div class="form-group">
+      <label>Uzmanlık Alanı</label>
+      <input type="text" id="myProfileSpecialty" class="form-input" placeholder="Örn: Klinik Psikolog, Aile Terapisti">
+    </div>
+    <div class="form-group">
+      <label>Telefon</label>
+      <input type="tel" id="myProfilePhone" class="form-input" placeholder="0532 XXX XXXX">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('expertProfileModal')">Vazgeç</button>
+      <button class="btn btn-primary" onclick="saveMyProfile()">Kaydet</button>
     </div>
   </div>
 </div>
