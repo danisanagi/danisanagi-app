@@ -138,6 +138,12 @@ body {
   text-align: left;
 }
 
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
 .form-group label {
   display: block;
   font-size: var(--text-sm);
@@ -1712,6 +1718,10 @@ textarea.form-input {
   .chat-file-image {
     max-width: 180px;
     max-height: 160px;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
   }
 
   .session-notes-form > div:first-child {
