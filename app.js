@@ -13,6 +13,7 @@ var sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 var currentUser = null;
 var currentProfile = null;
 var editingId = null;
+var pendingFile = null; // dosya paylaşımı için bekleyen dosya
 
 // ==================== INIT ====================
 (function init() {
@@ -1113,6 +1114,7 @@ function openMessaging(partnerId, partnerName) {
   document.getElementById("chatPartnerName").textContent = partnerName;
   document.getElementById("chatPartnerAvatar").textContent = getInitials(partnerName);
   document.getElementById("chatInput").value = "";
+  clearPendingFile();
   loadMessages(partnerId);
   openModal("messageModal");
   // Poll for new messages every 5 seconds
@@ -1158,7 +1160,8 @@ async function loadMessages(partnerId, silent) {
     var isMine = msg.sender_id === myId;
     var timeStr = String(msgDate.getHours()).padStart(2, '0') + ':' + String(msgDate.getMinutes()).padStart(2, '0');
     html += '<div class="chat-bubble ' + (isMine ? 'chat-mine' : 'chat-theirs') + '">' +
-      '<div class="chat-bubble-text">' + esc(msg.content) + '</div>' +
+      renderFileInBubble(msg) +
+      (msg.content ? '<div class="chat-bubble-text">' + esc(msg.content) + '</div>' : '') +
       '<div class="chat-bubble-time">' + timeStr + '</div>' +
     '</div>';
   });
@@ -1177,16 +1180,42 @@ async function loadMessages(partnerId, silent) {
 async function sendMessage() {
   var input = document.getElementById("chatInput");
   var text = input.value.trim();
-  if (!text || !currentChatPartnerId) return;
+
+  // Ne metin ne dosya varsa gönderme
+  if (!text && !pendingFile) return;
+  if (!currentChatPartnerId) return;
+
+  var fileUrl = null;
+  var fileName = null;
+  var fileType = null;
+
+  // Dosya varsa önce yükle
+  if (pendingFile) {
+    showToast("Dosya yükleniyor...");
+    var uploadResult = await uploadChatFile(pendingFile);
+    if (!uploadResult) {
+      showToast("Dosya yüklenemedi.");
+      return;
+    }
+    fileUrl = uploadResult.url;
+    fileName = uploadResult.name;
+    fileType = uploadResult.type;
+    clearPendingFile();
+  }
 
   input.value = '';
   input.focus();
 
-  var res = await sb.from("messages").insert({
+  var msgData = {
     sender_id: currentProfile.id,
     receiver_id: currentChatPartnerId,
-    content: text
-  });
+    content: text || null,
+    file_url: fileUrl,
+    file_name: fileName,
+    file_type: fileType
+  };
+
+  var res = await sb.from("messages").insert(msgData);
 
   if (res.error) {
     showToast("Mesaj gönderilemedi: " + res.error.message);
@@ -1194,6 +1223,127 @@ async function sendMessage() {
   }
 
   loadMessages(currentChatPartnerId, true);
+}
+
+// ==================== FILE SHARING ====================
+function handleFileSelect(input) {
+  var file = input.files[0];
+  if (!file) return;
+
+  // Max 10MB
+  if (file.size > 10 * 1024 * 1024) {
+    showToast("Dosya boyutu 10MB'dan küçük olmalıdır.");
+    input.value = '';
+    return;
+  }
+
+  pendingFile = file;
+  showFilePreview(file);
+}
+
+function showFilePreview(file) {
+  var preview = document.getElementById("chatFilePreview");
+  var isImage = file.type.startsWith('image/');
+
+  if (isImage) {
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      preview.innerHTML =
+        '<div class="file-preview-card">' +
+          '<img src="' + e.target.result + '" class="file-preview-img" alt="Önizleme">' +
+          '<div class="file-preview-info">' +
+            '<span class="file-preview-name">' + esc(file.name) + '</span>' +
+            '<span class="file-preview-size">' + formatFileSize(file.size) + '</span>' +
+          '</div>' +
+          '<button class="btn btn-ghost btn-sm file-preview-remove" onclick="clearPendingFile()" title="Kaldır">' +
+            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>' +
+          '</button>' +
+        '</div>';
+    };
+    reader.readAsDataURL(file);
+  } else {
+    preview.innerHTML =
+      '<div class="file-preview-card">' +
+        '<div class="file-preview-icon">' + getFileIcon(file.name) + '</div>' +
+        '<div class="file-preview-info">' +
+          '<span class="file-preview-name">' + esc(file.name) + '</span>' +
+          '<span class="file-preview-size">' + formatFileSize(file.size) + '</span>' +
+        '</div>' +
+        '<button class="btn btn-ghost btn-sm file-preview-remove" onclick="clearPendingFile()" title="Kaldır">' +
+          '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>' +
+        '</button>' +
+      '</div>';
+  }
+
+  preview.style.display = 'block';
+}
+
+function clearPendingFile() {
+  pendingFile = null;
+  var preview = document.getElementById("chatFilePreview");
+  preview.innerHTML = '';
+  preview.style.display = 'none';
+  var fileInput = document.getElementById("chatFileInput");
+  if (fileInput) fileInput.value = '';
+}
+
+async function uploadChatFile(file) {
+  var ext = file.name.split('.').pop();
+  var safeName = Date.now() + '_' + Math.random().toString(36).substring(2, 8) + '.' + ext;
+  var path = currentProfile.id + '/' + safeName;
+
+  var res = await sb.storage.from('chat-files').upload(path, file, {
+    cacheControl: '3600',
+    upsert: false
+  });
+
+  if (res.error) {
+    console.error('Upload error:', res.error);
+    return null;
+  }
+
+  var urlRes = sb.storage.from('chat-files').getPublicUrl(path);
+  return {
+    url: urlRes.data.publicUrl,
+    name: file.name,
+    type: file.type
+  };
+}
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function getFileIcon(filename) {
+  var ext = (filename.split('.').pop() || '').toLowerCase();
+  if (['pdf'].includes(ext)) return '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#e74c3c" stroke-width="1.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M10 12h4"/><path d="M10 16h4"/></svg>';
+  if (['doc','docx'].includes(ext)) return '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2b579a" stroke-width="1.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>';
+  if (['xls','xlsx'].includes(ext)) return '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#217346" stroke-width="1.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><rect x="8" y="12" width="8" height="6" rx="1"/></svg>';
+  return '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>';
+}
+
+function renderFileInBubble(msg) {
+  if (!msg.file_url) return '';
+  var isImage = (msg.file_type || '').startsWith('image/');
+  var fname = msg.file_name || 'Dosya';
+
+  if (isImage) {
+    return '<div class="chat-file-attachment">' +
+      '<a href="' + esc(msg.file_url) + '" target="_blank" rel="noopener">' +
+        '<img src="' + esc(msg.file_url) + '" class="chat-file-image" alt="' + esc(fname) + '" loading="lazy">' +
+      '</a>' +
+    '</div>';
+  }
+
+  return '<div class="chat-file-attachment chat-file-doc">' +
+    '<a href="' + esc(msg.file_url) + '" target="_blank" rel="noopener" class="chat-file-link">' +
+      getFileIcon(fname) +
+      '<span class="chat-file-name">' + esc(fname) + '</span>' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>' +
+    '</a>' +
+  '</div>';
 }
 
 async function getUnreadCount(partnerId) {
@@ -1541,7 +1691,8 @@ async function renderAdminMessagesTab() {
 
       var lastMsg = conv.lastMessage;
       var senderName = allUsers[lastMsg.sender_id] ? allUsers[lastMsg.sender_id].name : '?';
-      var preview = lastMsg.content.length > 50 ? lastMsg.content.substring(0, 50) + '...' : lastMsg.content;
+      var msgText = lastMsg.content || (lastMsg.file_name ? '📎 ' + lastMsg.file_name : 'Dosya');
+      var preview = msgText.length > 50 ? msgText.substring(0, 50) + '...' : msgText;
       var timeStr = formatDate(lastMsg.created_at);
 
       if (otherUser && otherId) {
@@ -1654,7 +1805,8 @@ renderExpertView = async function() {
     var adminPreview = '';
     if (lastAdminMsg) {
       var isMyMsg = lastAdminMsg.sender_id === myId2;
-      var prevText = lastAdminMsg.content.length > 40 ? lastAdminMsg.content.substring(0, 40) + '...' : lastAdminMsg.content;
+      var prevMsgText = lastAdminMsg.content || (lastAdminMsg.file_name ? '📎 ' + lastAdminMsg.file_name : 'Dosya');
+      var prevText = prevMsgText.length > 40 ? prevMsgText.substring(0, 40) + '...' : prevMsgText;
       adminPreview = '<div class="user-card-detail">' + (isMyMsg ? '<strong>Siz:</strong> ' : '<strong>Admin:</strong> ') + esc(prevText) + '</div>';
     } else {
       adminPreview = '<div class="user-card-detail">Henüz mesaj yok</div>';
