@@ -251,14 +251,22 @@ function renderAdminClientsTab() {
     var assignment = d.assignments.find(function(a) { return a.client_id === client.id; });
     var expert = assignment ? d.experts.find(function(e) { return e.id === assignment.expert_id; }) : null;
     var expertName = expert ? expert.full_name : "Atanmamış";
+    var detailParts = [];
+    if (client.age) detailParts.push(client.age + ' yaş');
+    if (client.gender) detailParts.push(client.gender);
+    if (client.session_fee) detailParts.push(client.session_fee);
+    var detailLine = detailParts.length > 0 ? '<div class="user-card-detail" style="font-size:11px;color:var(--color-text-faint);">' + esc(detailParts.join(' • ')) + '</div>' : '';
     html +=
       '<div class="user-card" data-name="' + client.full_name.toLowerCase() + '">' +
         '<div class="user-card-avatar">' + getInitials(client.full_name) + '</div>' +
         '<div class="user-card-info">' +
           '<div class="user-card-name">' + esc(client.full_name) + '</div>' +
           '<div class="user-card-detail">Uzman: ' + esc(expertName) + '</div>' +
+          detailLine +
         '</div>' +
         '<div class="user-card-actions">' +
+          '<button class="btn btn-ghost btn-sm" onclick="openAdminClientDetail(\'' + client.id + '\')" title="Detay">' +
+            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>' +
           '<button class="btn btn-ghost btn-sm" onclick="openEditClient(\'' + client.id + '\')" title="Düzenle">' +
             '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>' +
           '<button class="btn btn-ghost btn-sm" onclick="confirmDelete(\'' + client.id + '\',\'' + escAttr(client.full_name) + '\',\'client\')" title="Sil" style="color:var(--color-error);">' +
@@ -269,6 +277,57 @@ function renderAdminClientsTab() {
 
   html += '</div>';
   container.innerHTML = html;
+}
+
+function openAdminClientDetail(clientId) {
+  var d = window._adminData;
+  var client = d.clients.find(function(c) { return c.id === clientId; });
+  if (!client) return;
+  var assignment = d.assignments.find(function(a) { return a.client_id === clientId; });
+  var expert = assignment ? d.experts.find(function(e) { return e.id === assignment.expert_id; }) : null;
+
+  var html = '<div class="modal"><div class="modal-header"><h3 class="modal-title">' + esc(client.full_name) + ' — Detay</h3>' +
+    '<button class="modal-close" onclick="closeModal(\'adminClientDetailModal\')">' +
+    '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>' +
+    '<div style="display:grid;gap:var(--space-3);">';
+
+  function row(label, value) {
+    return '<div style="display:flex;justify-content:space-between;padding:var(--space-2) 0;border-bottom:1px solid var(--color-border);">' +
+      '<span style="font-weight:500;color:var(--color-text-muted);font-size:var(--text-sm);">' + label + '</span>' +
+      '<span style="font-size:var(--text-sm);text-align:right;max-width:60%;">' + (value ? esc(String(value)) : '<em style="color:var(--color-text-faint);">Belirtilmemiş</em>') + '</span></div>';
+  }
+
+  html += row('E-posta', client.email);
+  html += row('Telefon', client.phone);
+  html += row('Atanan Uzman', expert ? expert.full_name : 'Atanmamış');
+  html += row('Yaş', client.age);
+  html += row('Cinsiyet', client.gender);
+  html += row('Medeni Durum', client.marital_status);
+  html += row('Seans Ücreti', client.session_fee);
+  html += row('Uygun Saatler', client.available_hours);
+  html += row('Önceki Terapi', client.previous_therapy);
+  html += row('İlaç Kullanımı', client.medication_use);
+
+  if (client.pre_interview_summary) {
+    html += '<div style="padding:var(--space-2) 0;"><div style="font-weight:500;color:var(--color-text-muted);font-size:var(--text-sm);margin-bottom:var(--space-1);">Ön Görüşme Özeti</div>' +
+      '<div style="font-size:var(--text-sm);background:var(--color-bg-subtle);padding:var(--space-3);border-radius:var(--radius-md);white-space:pre-wrap;">' + esc(client.pre_interview_summary) + '</div></div>';
+  } else {
+    html += row('Ön Görüşme Özeti', null);
+  }
+
+  html += '</div><div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal(\'adminClientDetailModal\')">Kapat</button>' +
+    '<button class="btn btn-primary" onclick="closeModal(\'adminClientDetailModal\');openEditClient(\'' + clientId + '\')">Düzenle</button></div></div>';
+
+  var overlay = document.getElementById('adminClientDetailModal');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'adminClientDetailModal';
+    overlay.className = 'modal-overlay';
+    document.body.appendChild(overlay);
+  }
+  overlay.innerHTML = html;
+  overlay.classList.add('active');
+  overlay.onclick = function(e) { if (e.target === overlay) closeModal('adminClientDetailModal'); };
 }
 
 async function renderAdminNotesTab() {
@@ -597,6 +656,14 @@ function openAddClient() {
   document.getElementById("clientPassword").style.display = "";
   document.getElementById("clientPasswordHint").style.display = "";
   document.getElementById("clientEmail").disabled = false;
+  document.getElementById("clientAge").value = "";
+  document.getElementById("clientGender").value = "";
+  document.getElementById("clientMaritalStatus").value = "";
+  document.getElementById("clientSessionFee").value = "";
+  document.getElementById("clientAvailableHours").value = "";
+  document.getElementById("clientPreviousTherapy").value = "";
+  document.getElementById("clientMedicationUse").value = "";
+  document.getElementById("clientPreInterviewSummary").value = "";
   populateExpertSelect("");
   openModal("clientModal");
 }
@@ -612,6 +679,14 @@ function openEditClient(id) {
   document.getElementById("clientPassword").style.display = "none";
   document.getElementById("clientPasswordHint").style.display = "none";
   document.getElementById("clientPhone").value = client.phone || "";
+  document.getElementById("clientAge").value = client.age || "";
+  document.getElementById("clientGender").value = client.gender || "";
+  document.getElementById("clientMaritalStatus").value = client.marital_status || "";
+  document.getElementById("clientSessionFee").value = client.session_fee || "";
+  document.getElementById("clientAvailableHours").value = client.available_hours || "";
+  document.getElementById("clientPreviousTherapy").value = client.previous_therapy || "";
+  document.getElementById("clientMedicationUse").value = client.medication_use || "";
+  document.getElementById("clientPreInterviewSummary").value = client.pre_interview_summary || "";
 
   var assignment = window._adminData.assignments.find(function(a) { return a.client_id === id; });
   populateExpertSelect(assignment ? assignment.expert_id : "");
@@ -633,6 +708,14 @@ async function saveClient() {
   var password = document.getElementById("clientPassword").value.trim();
   var phone = document.getElementById("clientPhone").value.trim();
   var expertId = document.getElementById("clientExpertSelect").value || null;
+  var age = document.getElementById("clientAge").value ? parseInt(document.getElementById("clientAge").value) : null;
+  var gender = document.getElementById("clientGender").value || null;
+  var maritalStatus = document.getElementById("clientMaritalStatus").value || null;
+  var sessionFee = document.getElementById("clientSessionFee").value.trim() || null;
+  var availableHours = document.getElementById("clientAvailableHours").value.trim() || null;
+  var previousTherapy = document.getElementById("clientPreviousTherapy").value || null;
+  var medicationUse = document.getElementById("clientMedicationUse").value || null;
+  var preInterviewSummary = document.getElementById("clientPreInterviewSummary").value.trim() || null;
 
   if (!name || !email) {
     showToast("Ad ve e-posta zorunludur.");
@@ -643,6 +726,14 @@ async function saveClient() {
     var upd = await sb.from("profiles").update({
       full_name: name,
       phone: phone,
+      age: age,
+      gender: gender,
+      marital_status: maritalStatus,
+      session_fee: sessionFee,
+      available_hours: availableHours,
+      previous_therapy: previousTherapy,
+      medication_use: medicationUse,
+      pre_interview_summary: preInterviewSummary,
       updated_at: new Date().toISOString()
     }).eq("id", editingId);
 
@@ -673,7 +764,15 @@ async function saveClient() {
         full_name: name,
         role: "client",
         phone: phone,
-        expert_id: expertId
+        expert_id: expertId,
+        age: age,
+        gender: gender,
+        marital_status: maritalStatus,
+        session_fee: sessionFee,
+        available_hours: availableHours,
+        previous_therapy: previousTherapy,
+        medication_use: medicationUse,
+        pre_interview_summary: preInterviewSummary
       })
     });
     var data = await res.json();
@@ -868,6 +967,32 @@ async function showClientDetail(clientId) {
   var detailEl = document.getElementById("clientDetailView");
   detailEl.classList.add("active");
 
+  // Build client info section
+  var infoItems = [];
+  if (client.age) infoItems.push({l:'Yaş', v: client.age});
+  if (client.gender) infoItems.push({l:'Cinsiyet', v: client.gender});
+  if (client.marital_status) infoItems.push({l:'Medeni Durum', v: client.marital_status});
+  if (client.session_fee) infoItems.push({l:'Seans Ücreti', v: client.session_fee});
+  if (client.available_hours) infoItems.push({l:'Uygun Saatler', v: client.available_hours});
+  if (client.previous_therapy) infoItems.push({l:'Önceki Terapi', v: client.previous_therapy});
+  if (client.medication_use) infoItems.push({l:'İlaç Kullanımı', v: client.medication_use});
+
+  var infoHtml = '';
+  if (infoItems.length > 0 || client.pre_interview_summary) {
+    infoHtml = '<div style="background:var(--color-bg-subtle);border-radius:var(--radius-md);padding:var(--space-4);margin-bottom:var(--space-4);">' +
+      '<h3 class="section-title" style="font-size:var(--text-sm);margin-bottom:var(--space-3);">Danışan Bilgileri</h3>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-2);">';
+    infoItems.forEach(function(item) {
+      infoHtml += '<div style="font-size:var(--text-sm);"><span style="color:var(--color-text-muted);">' + item.l + ':</span> ' + esc(String(item.v)) + '</div>';
+    });
+    infoHtml += '</div>';
+    if (client.pre_interview_summary) {
+      infoHtml += '<div style="margin-top:var(--space-3);font-size:var(--text-sm);"><span style="color:var(--color-text-muted);">Ön Görüşme Özeti:</span>' +
+        '<div style="margin-top:var(--space-1);white-space:pre-wrap;">' + esc(client.pre_interview_summary) + '</div></div>';
+    }
+    infoHtml += '</div>';
+  }
+
   var html =
     '<button class="back-btn" onclick="backToExpertList()">' +
       '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg> Geri Dön</button>' +
@@ -877,6 +1002,7 @@ async function showClientDetail(clientId) {
       '<button class="btn btn-primary btn-sm" onclick="startVideoCall(\'' + escAttr(client.id) + '\',\'' + escAttr(client.full_name) + '\')" style="margin-left:auto;">' +
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg> Görüşme</button>' +
     '</div>' +
+    infoHtml +
     '<div class="notes-section">' +
       '<h3 class="section-title">Seans Notları</h3>' +
       '<div class="note-input-area">' +
