@@ -43,7 +43,7 @@ module.exports = async function handler(req, res) {
     }
 
     // 2. Parse request body
-    const { email, password, full_name, role, specialty, areas_of_expertise, phone, expert_id } = req.body;
+    const { email, password, full_name, role, specialty, areas_of_expertise, phone, expert_id, age, gender, marital_status, session_fee, available_hours, previous_therapy, medication_use, pre_interview_summary } = req.body;
     if (!email || !password || !full_name || !role) {
       return res.status(400).json({ error: "email, password, full_name ve role zorunludur" });
     }
@@ -88,7 +88,15 @@ module.exports = async function handler(req, res) {
       role: role,
       phone: phone || null,
       specialty: specialty || null,
-      areas_of_expertise: areas_of_expertise || null
+      areas_of_expertise: areas_of_expertise || null,
+      age: age || null,
+      gender: gender || null,
+      marital_status: marital_status || null,
+      session_fee: session_fee || null,
+      available_hours: available_hours || null,
+      previous_therapy: previous_therapy || null,
+      medication_use: medication_use || null,
+      pre_interview_summary: pre_interview_summary || null
     };
 
     const profileCreateRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
