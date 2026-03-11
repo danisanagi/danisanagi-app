@@ -279,17 +279,37 @@ function renderAdminClientsTab() {
   container.innerHTML = html;
 }
 
-function openAdminClientDetail(clientId) {
+async function openAdminClientDetail(clientId) {
   var d = window._adminData;
   var client = d.clients.find(function(c) { return c.id === clientId; });
   if (!client) return;
   var assignment = d.assignments.find(function(a) { return a.client_id === clientId; });
   var expert = assignment ? d.experts.find(function(e) { return e.id === assignment.expert_id; }) : null;
 
+  // Show loading first
+  var overlay = document.getElementById('adminClientDetailModal');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'adminClientDetailModal';
+    overlay.className = 'modal-overlay';
+    document.body.appendChild(overlay);
+  }
+  overlay.innerHTML = '<div class="modal"><div class="empty-state"><div class="loading-spinner"></div><p>Yükleniyor...</p></div></div>';
+  overlay.classList.add('active');
+  overlay.onclick = function(e) { if (e.target === overlay) closeModal('adminClientDetailModal'); };
+
+  // Load progress data
+  var progressData = await loadProgressData(clientId);
+
   var html = '<div class="modal"><div class="modal-header"><h3 class="modal-title">' + esc(client.full_name) + ' — Detay</h3>' +
     '<button class="modal-close" onclick="closeModal(\'adminClientDetailModal\')">' +
-    '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>' +
-    '<div style="display:grid;gap:var(--space-3);">';
+    '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>';
+
+  // Progress summary
+  html += '<h4 style="font-family:var(--font-display);font-size:var(--text-sm);font-weight:600;margin-bottom:var(--space-3);">İlerleme Özeti</h4>';
+  html += renderProgressDashboard(progressData);
+
+  html += '<div style="display:grid;gap:var(--space-3);">';
 
   function row(label, value) {
     return '<div style="display:flex;justify-content:space-between;padding:var(--space-2) 0;border-bottom:1px solid var(--color-border);">' +
@@ -318,35 +338,57 @@ function openAdminClientDetail(clientId) {
   html += '</div><div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal(\'adminClientDetailModal\')">Kapat</button>' +
     '<button class="btn btn-primary" onclick="closeModal(\'adminClientDetailModal\');openEditClient(\'' + clientId + '\')">Düzenle</button></div></div>';
 
-  var overlay = document.getElementById('adminClientDetailModal');
-  if (!overlay) {
-    overlay = document.createElement('div');
-    overlay.id = 'adminClientDetailModal';
-    overlay.className = 'modal-overlay';
-    document.body.appendChild(overlay);
-  }
   overlay.innerHTML = html;
-  overlay.classList.add('active');
-  overlay.onclick = function(e) { if (e.target === overlay) closeModal('adminClientDetailModal'); };
 }
 
 async function renderAdminNotesTab() {
   var container = document.getElementById("adminTabContent");
   var d = window._adminData;
 
+  container.innerHTML = '<div class="empty-state"><div class="loading-spinner"></div><p>Yükleniyor...</p></div>';
+
+  // Fetch structured notes too
+  var structRes = await sb.from("structured_notes").select("*").order("created_at", { ascending: false });
+  var structuredNotes = structRes.data || [];
+
   var html = '<h2 class="section-title">Tüm Seans Notları</h2>';
 
-  if (d.notes.length === 0) {
+  // Combine all notes
+  var allNotes = [];
+  d.notes.forEach(function(note) {
+    allNotes.push({ type: 'free', date: note.created_at, content: note.content, expert_id: note.expert_id, client_id: note.client_id });
+  });
+  structuredNotes.forEach(function(note) {
+    var content = '';
+    if (note.note_type === 'soap') {
+      content = (note.subjective ? 'S: ' + note.subjective + '\n' : '') + (note.objective ? 'O: ' + note.objective + '\n' : '') + (note.assessment ? 'A: ' + note.assessment + '\n' : '') + (note.plan ? 'P: ' + note.plan : '');
+    } else if (note.note_type === 'risk') {
+      content = 'Risk Seviyesi: ' + (note.risk_level || '?') + '\n' + (note.risk_details || '');
+    } else if (note.note_type === 'plan') {
+      content = (note.goals ? 'Hedefler: ' + note.goals + '\n' : '') + (note.interventions ? 'Müdahaleler: ' + note.interventions + '\n' : '') + (note.next_session_goals ? 'Sonraki Seans: ' + note.next_session_goals : '');
+    }
+    allNotes.push({ type: note.note_type, date: note.created_at, content: content, expert_id: note.expert_id, client_id: note.client_id, session_date: note.session_date, risk_level: note.risk_level });
+  });
+
+  if (allNotes.length === 0) {
     html += '<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><h3>Henüz not yok</h3><p>Uzmanlar seans notları eklediğinde burada görünecektir.</p></div>';
   } else {
-    var sorted = d.notes.slice().sort(function(a, b) { return new Date(b.created_at) - new Date(a.created_at); });
+    var sorted = allNotes.sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
     sorted.forEach(function(note) {
       var expert = d.experts.find(function(e) { return e.id === note.expert_id; });
       var client = d.clients.find(function(c) { return c.id === note.client_id; });
+      var badgeClass = 'note-type-free';
+      var badgeLabel = 'Serbest';
+      if (note.type === 'soap') { badgeClass = 'note-type-soap'; badgeLabel = 'SOAP'; }
+      else if (note.type === 'risk') { badgeClass = 'note-type-risk'; badgeLabel = 'Risk'; }
+      else if (note.type === 'plan') { badgeClass = 'note-type-plan'; badgeLabel = 'Tedavi Planı'; }
       html +=
         '<div class="note-item">' +
-          '<div class="note-date"><strong>' + esc(expert ? expert.full_name : "?") + '</strong> → <strong>' + esc(client ? client.full_name : "?") + '</strong> — ' + formatDate(note.created_at) + '</div>' +
-          '<div class="note-text">' + esc(note.content) + '</div>' +
+          '<div class="note-date">' +
+            '<span class="note-type-badge ' + badgeClass + '">' + badgeLabel + '</span> ' +
+            '<strong>' + esc(expert ? expert.full_name : "?") + '</strong> → <strong>' + esc(client ? client.full_name : "?") + '</strong> — ' + formatDate(note.date) +
+          '</div>' +
+          '<div class="note-text" style="white-space:pre-wrap;">' + esc(note.content) + '</div>' +
         '</div>';
     });
   }
@@ -956,16 +998,29 @@ async function showClientDetail(clientId) {
   var client = clientRes.data;
   if (!client) return;
 
-  var notesRes = await sb.from("notes").select("*").eq("expert_id", currentProfile.id).eq("client_id", clientId).order("created_at", { ascending: false });
-  var notes = notesRes.data || [];
-
   var expertClientList = document.getElementById("expertClientList");
   if (expertClientList) expertClientList.style.display = "none";
   var upcomingSection = document.querySelector(".upcoming-sessions-section");
   if (upcomingSection) upcomingSection.style.display = "none";
+  var adminMsgSection = document.querySelector(".admin-message-section");
+  if (adminMsgSection) adminMsgSection.style.display = "none";
   document.querySelector(".page-header").style.display = "none";
   var detailEl = document.getElementById("clientDetailView");
   detailEl.classList.add("active");
+  detailEl.innerHTML = '<div class="empty-state"><div class="loading-spinner"></div><p>Yükleniyor...</p></div>';
+
+  // Load all data in parallel
+  var notesRes = await sb.from("notes").select("*").eq("expert_id", currentProfile.id).eq("client_id", clientId).order("created_at", { ascending: false });
+  var notes = notesRes.data || [];
+
+  var structuredNotes = await loadStructuredNotes(clientId);
+  var progressData = await loadProgressData(clientId);
+  var moodEntries = await loadMoodEntries(clientId, 30);
+  var homeworkList = await loadHomework(clientId);
+
+  // Shared journals
+  var journalRes = await sb.from("journal_entries").select("*").eq("client_id", clientId).eq("is_shared", true).order("created_at", { ascending: false });
+  var sharedJournals = journalRes.data || [];
 
   // Build client info section
   var infoItems = [];
@@ -979,7 +1034,7 @@ async function showClientDetail(clientId) {
 
   var infoHtml = '';
   if (infoItems.length > 0 || client.pre_interview_summary) {
-    infoHtml = '<div style="background:var(--color-bg-subtle);border-radius:var(--radius-md);padding:var(--space-4);margin-bottom:var(--space-4);">' +
+    infoHtml = '<div style="background:var(--color-surface-2);border-radius:var(--radius-md);padding:var(--space-4);margin-bottom:var(--space-4);">' +
       '<h3 class="section-title" style="font-size:var(--text-sm);margin-bottom:var(--space-3);">Danışan Bilgileri</h3>' +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-2);">';
     infoItems.forEach(function(item) {
@@ -1002,24 +1057,167 @@ async function showClientDetail(clientId) {
       '<button class="btn btn-primary btn-sm" onclick="startVideoCall(\'' + escAttr(client.id) + '\',\'' + escAttr(client.full_name) + '\')" style="margin-left:auto;">' +
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg> Görüşme</button>' +
     '</div>' +
-    infoHtml +
-    '<div class="notes-section">' +
-      '<h3 class="section-title">Seans Notları</h3>' +
-      '<div class="note-input-area">' +
-        '<textarea id="newNoteText" placeholder="Yeni seans notu yazın..."></textarea>' +
-        '<button class="btn btn-primary" onclick="addNote(\'' + clientId + '\')">Ekle</button>' +
-      '</div>';
+    infoHtml;
 
-  if (notes.length === 0) {
-    html += '<p style="color:var(--color-text-muted);font-size:var(--text-sm);text-align:center;padding:var(--space-6);">Henüz not eklenmemiş.</p>';
+  // ---- Progress Dashboard ----
+  html += '<h3 class="section-title">İlerleme Özeti</h3>';
+  html += renderProgressDashboard(progressData);
+
+  // ---- Mood Chart (30 days) ----
+  html += '<div style="background:var(--color-surface);border:1px solid var(--color-divider);border-radius:var(--radius-lg);padding:var(--space-4);margin-bottom:var(--space-4);">' +
+    '<h3 class="section-title" style="font-size:var(--text-sm);margin-bottom:var(--space-3);">Duygu Grafiği (Son 30 Gün)</h3>' +
+    renderMoodChart(moodEntries) +
+  '</div>';
+
+  // ---- Tabbed Notes Section ----
+  html += '<div class="notes-section">' +
+    '<h3 class="section-title">Seans Notları</h3>' +
+    '<div class="note-tabs">' +
+      '<button class="note-tab-btn active" data-tab="free" onclick="switchNoteTab(\'free\')">Serbest Not</button>' +
+      '<button class="note-tab-btn" data-tab="soap" onclick="switchNoteTab(\'soap\')">SOAP Notu</button>' +
+      '<button class="note-tab-btn" data-tab="risk" onclick="switchNoteTab(\'risk\')">Risk Değerlendirme</button>' +
+      '<button class="note-tab-btn" data-tab="plan" onclick="switchNoteTab(\'plan\')">Tedavi Planı</button>' +
+    '</div>';
+
+  // Free note tab
+  html += '<div class="note-tab-content" id="noteTab_free" style="display:block;">' +
+    '<div class="note-input-area">' +
+      '<textarea id="newNoteText" placeholder="Yeni seans notu yazın..."></textarea>' +
+      '<button class="btn btn-primary" onclick="addNote(\'' + clientId + '\')">Ekle</button>' +
+    '</div>' +
+  '</div>';
+
+  // SOAP tab
+  html += '<div class="note-tab-content" id="noteTab_soap" style="display:none;">' +
+    renderStructuredNoteForm('soap') +
+    '<div style="text-align:right;margin-top:var(--space-3);"><button class="btn btn-primary" onclick="saveSoapNote(\'' + clientId + '\')">SOAP Notu Kaydet</button></div>' +
+  '</div>';
+
+  // Risk tab
+  html += '<div class="note-tab-content" id="noteTab_risk" style="display:none;">' +
+    renderStructuredNoteForm('risk') +
+    '<div style="text-align:right;margin-top:var(--space-3);"><button class="btn btn-primary" onclick="saveRiskNote(\'' + clientId + '\')">Risk Notu Kaydet</button></div>' +
+  '</div>';
+
+  // Plan tab
+  html += '<div class="note-tab-content" id="noteTab_plan" style="display:none;">' +
+    renderStructuredNoteForm('plan') +
+    '<div style="text-align:right;margin-top:var(--space-3);"><button class="btn btn-primary" onclick="savePlanNote(\'' + clientId + '\')">Tedavi Planı Kaydet</button></div>' +
+  '</div>';
+
+  // Combined note timeline
+  html += '<h4 style="font-family:var(--font-display);font-size:var(--text-sm);font-weight:600;margin-top:var(--space-6);margin-bottom:var(--space-3);">Tüm Notlar</h4>';
+  html += renderNoteTimeline(notes, structuredNotes);
+  html += '</div>';
+
+  // ---- Homework Section ----
+  html += '<div style="margin-top:var(--space-6);">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-4);">' +
+      '<h3 class="section-title" style="margin-bottom:0;">Ödevler</h3>' +
+      '<button class="btn btn-primary btn-sm" onclick="toggleHomeworkForm(\'' + clientId + '\')">Ödev Ver</button>' +
+    '</div>' +
+    '<div id="homeworkFormArea" style="display:none;background:var(--color-surface-2);padding:var(--space-4);border-radius:var(--radius-lg);margin-bottom:var(--space-4);">' +
+      '<div class="form-group"><label>Başlık</label><input type="text" id="hwTitle" class="form-input" placeholder="Ödev başlığı"></div>' +
+      '<div class="form-group"><label>Açıklama</label><textarea id="hwDesc" class="form-input" rows="2" placeholder="Ödev açıklaması..."></textarea></div>' +
+      '<div class="form-group"><label>Son Tarih</label><input type="date" id="hwDueDate" class="form-input"></div>' +
+      '<div style="text-align:right;"><button class="btn btn-primary btn-sm" onclick="submitHomework(\'' + clientId + '\')">Kaydet</button></div>' +
+    '</div>';
+
+  if (homeworkList.length === 0) {
+    html += '<p style="color:var(--color-text-muted);font-size:var(--text-sm);text-align:center;padding:var(--space-4);">Henüz ödev atanmamış.</p>';
   } else {
-    notes.forEach(function(note) {
-      html += '<div class="note-item"><div class="note-date">' + formatDate(note.created_at) + '</div><div class="note-text">' + esc(note.content) + '</div></div>';
+    homeworkList.forEach(function(hw) {
+      var statusClass = hw.status === 'completed' ? 'homework-status-completed' : 'homework-status-pending';
+      var statusLabel = hw.status === 'completed' ? 'Tamamlandı' : 'Bekliyor';
+      html += '<div class="homework-card">' +
+        '<div class="homework-header">' +
+          '<span class="homework-title">' + esc(hw.title) + '</span>' +
+          '<div style="display:flex;gap:var(--space-2);align-items:center;">' +
+            '<span class="homework-status ' + statusClass + '">' + statusLabel + '</span>' +
+            '<button class="btn btn-ghost btn-sm" onclick="deleteHomework(' + hw.id + ').then(function(){showClientDetail(\'' + clientId + '\')})" title="Sil" style="color:var(--color-error);padding:var(--space-1);">' +
+              '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>' +
+          '</div>' +
+        '</div>' +
+        (hw.description ? '<div class="homework-desc">' + esc(hw.description) + '</div>' : '') +
+        (hw.due_date ? '<div class="homework-due">Son tarih: ' + formatSessionDate(hw.due_date) + '</div>' : '') +
+        (hw.client_response ? '<div class="homework-response" style="border-top:1px solid var(--color-divider);margin-top:var(--space-2);padding-top:var(--space-2);"><div style="font-size:var(--text-xs);color:var(--color-text-muted);margin-bottom:var(--space-1);">Danışan Yanıtı:</div><div style="font-size:var(--text-sm);">' + esc(hw.client_response) + '</div></div>' : '') +
+      '</div>';
     });
   }
-
   html += '</div>';
+
+  // ---- Shared Journals Section ----
+  html += '<div style="margin-top:var(--space-6);">' +
+    '<h3 class="section-title">Paylaşılan Günlükler</h3>';
+
+  if (sharedJournals.length === 0) {
+    html += '<p style="color:var(--color-text-muted);font-size:var(--text-sm);text-align:center;padding:var(--space-4);">Danışan henüz paylaşılan günlük yazmamış.</p>';
+  } else {
+    sharedJournals.forEach(function(j) {
+      html += '<div class="journal-entry">' +
+        '<div class="journal-header">' +
+          '<span class="journal-title">' + esc(j.title || 'Başlıksız') + '</span>' +
+          '<span class="journal-date">' + formatDate(j.created_at) + '</span>' +
+        '</div>' +
+        '<div class="journal-content">' + esc(j.content) + '</div>' +
+      '</div>';
+    });
+  }
+  html += '</div>';
+
   detailEl.innerHTML = html;
+}
+
+// Helper to toggle homework form
+function toggleHomeworkForm(clientId) {
+  var form = document.getElementById('homeworkFormArea');
+  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+}
+
+// Helper to submit homework from expert view
+async function submitHomework(clientId) {
+  var title = document.getElementById('hwTitle').value.trim();
+  var desc = document.getElementById('hwDesc').value.trim();
+  var dueDate = document.getElementById('hwDueDate').value;
+  var ok = await saveHomework(clientId, title, desc, dueDate);
+  if (ok) showClientDetail(clientId);
+}
+
+// Helpers to save structured notes from forms
+async function saveSoapNote(clientId) {
+  var data = {
+    session_date: document.getElementById('soapDate').value,
+    subjective: document.getElementById('soapS').value.trim(),
+    objective: document.getElementById('soapO').value.trim(),
+    assessment: document.getElementById('soapA').value.trim(),
+    plan: document.getElementById('soapP').value.trim()
+  };
+  if (!data.subjective && !data.objective && !data.assessment && !data.plan) { showToast('Lütfen en az bir alan doldurun.'); return; }
+  var ok = await saveStructuredNote(clientId, 'soap', data);
+  if (ok) showClientDetail(clientId);
+}
+
+async function saveRiskNote(clientId) {
+  var data = {
+    session_date: document.getElementById('riskDate').value,
+    risk_level: document.getElementById('riskLevel').value,
+    risk_details: document.getElementById('riskDetails').value.trim()
+  };
+  if (!data.risk_level) { showToast('Lütfen risk seviyesi seçin.'); return; }
+  var ok = await saveStructuredNote(clientId, 'risk', data);
+  if (ok) showClientDetail(clientId);
+}
+
+async function savePlanNote(clientId) {
+  var data = {
+    session_date: document.getElementById('planDate').value,
+    goals: document.getElementById('planGoals').value.trim(),
+    interventions: document.getElementById('planInterventions').value.trim(),
+    next_session_goals: document.getElementById('planNextGoals').value.trim()
+  };
+  if (!data.goals && !data.interventions && !data.next_session_goals) { showToast('Lütfen en az bir alan doldurun.'); return; }
+  var ok = await saveStructuredNote(clientId, 'plan', data);
+  if (ok) showClientDetail(clientId);
 }
 
 function backToExpertList() {
@@ -1027,6 +1225,8 @@ function backToExpertList() {
   if (expertClientList) expertClientList.style.display = "grid";
   var upcomingSection = document.querySelector(".upcoming-sessions-section");
   if (upcomingSection) upcomingSection.style.display = "";
+  var adminMsgSection = document.querySelector(".admin-message-section");
+  if (adminMsgSection) adminMsgSection.style.display = "";
   document.querySelector(".page-header").style.display = "flex";
   var detailEl = document.getElementById("clientDetailView");
   detailEl.classList.remove("active");
@@ -1721,6 +1921,369 @@ async function renderAdminDashboardTab() {
   container.innerHTML = html;
 }
 
+// ==================== MOOD TRACKING FUNCTIONS ====================
+var selectedMoodScore = null;
+var selectedMoodLabel = '';
+
+function selectMood(score, label) {
+  selectedMoodScore = score;
+  selectedMoodLabel = label;
+  document.querySelectorAll('.mood-emoji-btn').forEach(function(btn) {
+    btn.classList.remove('selected');
+    if (btn.getAttribute('data-score') === String(score)) {
+      btn.classList.add('selected');
+    }
+  });
+}
+
+async function saveMoodEntry(score, label, note) {
+  if (!score) { showToast('Lütfen bir duygu seçin.'); return; }
+  var res = await sb.from('mood_entries').insert({
+    client_id: currentProfile.id,
+    mood_score: score,
+    mood_label: label,
+    note: note || null
+  });
+  if (res.error) { showToast('Hata: ' + res.error.message); return; }
+  showToast('Ruh haliniz kaydedildi');
+  selectedMoodScore = null;
+  selectedMoodLabel = '';
+  renderClientView();
+}
+
+async function loadMoodEntries(clientId, days) {
+  var since = new Date();
+  since.setDate(since.getDate() - days);
+  var res = await sb.from('mood_entries').select('*')
+    .eq('client_id', clientId)
+    .gte('created_at', since.toISOString())
+    .order('created_at', { ascending: true });
+  return res.data || [];
+}
+
+function renderMoodSelector() {
+  return '<div class="mood-selector">' +
+    '<button class="mood-emoji-btn" data-score="2" onclick="selectMood(2,\'Çok Kötü\')" title="Çok Kötü">😞</button>' +
+    '<button class="mood-emoji-btn" data-score="4" onclick="selectMood(4,\'Kötü\')" title="Kötü">😕</button>' +
+    '<button class="mood-emoji-btn" data-score="5" onclick="selectMood(5,\'Orta\')" title="Orta">😐</button>' +
+    '<button class="mood-emoji-btn" data-score="7" onclick="selectMood(7,\'İyi\')" title="İyi">🙂</button>' +
+    '<button class="mood-emoji-btn" data-score="9" onclick="selectMood(9,\'Çok İyi\')" title="Çok İyi">😊</button>' +
+  '</div>';
+}
+
+function getMoodEmoji(score) {
+  if (score <= 2) return '😞';
+  if (score <= 4) return '😕';
+  if (score <= 5) return '😐';
+  if (score <= 7) return '🙂';
+  return '😊';
+}
+
+function getMoodColor(score) {
+  if (score <= 2) return '#c0392b';
+  if (score <= 4) return '#e67e22';
+  if (score <= 5) return '#f1c40f';
+  if (score <= 7) return '#27ae60';
+  return '#2ecc71';
+}
+
+function renderMoodTimeline(entries) {
+  if (!entries || entries.length === 0) {
+    return '<p style="font-size:var(--text-xs);color:var(--color-text-faint);text-align:center;padding:var(--space-3);">Henüz duygu kaydı yok.</p>';
+  }
+  var last7 = entries.slice(-7);
+  var html = '<div class="mood-timeline">';
+  last7.forEach(function(e) {
+    var d = new Date(e.created_at);
+    var dayNames = ['Paz','Pzt','Sal','Çar','Per','Cum','Cmt'];
+    var dateLabel = dayNames[d.getDay()] + ' ' + d.getDate();
+    html += '<div class="mood-timeline-item">' +
+      '<div class="mood-timeline-emoji" title="' + esc(e.mood_label || '') + ' (' + e.mood_score + ')">' + getMoodEmoji(e.mood_score) + '</div>' +
+      '<div class="mood-timeline-date">' + dateLabel + '</div>' +
+    '</div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+function renderMoodChart(entries) {
+  if (!entries || entries.length === 0) {
+    return '<p style="font-size:var(--text-xs);color:var(--color-text-faint);text-align:center;padding:var(--space-4);">Duygu verisi bulunamadı.</p>';
+  }
+  var maxScore = 10;
+  var html = '<div class="mood-chart">';
+  entries.forEach(function(e) {
+    var pct = (e.mood_score / maxScore) * 100;
+    var color = getMoodColor(e.mood_score);
+    var d = new Date(e.created_at);
+    var dateLabel = d.getDate() + '/' + (d.getMonth() + 1);
+    html += '<div class="mood-bar-wrapper">' +
+      '<div class="mood-bar" style="height:' + pct + '%;background:' + color + ';" title="' + dateLabel + ' - ' + getMoodEmoji(e.mood_score) + ' ' + esc(e.mood_label || '') + ' (' + e.mood_score + ')"></div>' +
+      '<div class="mood-bar-date">' + dateLabel + '</div>' +
+    '</div>';
+  });
+  html += '</div>';
+  // Compute average
+  var sum = 0;
+  entries.forEach(function(e) { sum += e.mood_score; });
+  var avg = (sum / entries.length).toFixed(1);
+  html += '<div style="text-align:center;font-size:var(--text-sm);color:var(--color-text-muted);margin-top:var(--space-2);">Ortalama: <strong>' + avg + '/10</strong> ' + getMoodEmoji(Math.round(sum / entries.length)) + '</div>';
+  return html;
+}
+
+// ==================== STRUCTURED NOTES FUNCTIONS ====================
+var currentNoteTab = 'free';
+
+function switchNoteTab(tab) {
+  currentNoteTab = tab;
+  document.querySelectorAll('.note-tab-btn').forEach(function(b) { b.classList.remove('active'); });
+  var activeBtn = document.querySelector('.note-tab-btn[data-tab="' + tab + '"]');
+  if (activeBtn) activeBtn.classList.add('active');
+  document.querySelectorAll('.note-tab-content').forEach(function(c) { c.style.display = 'none'; });
+  var activeContent = document.getElementById('noteTab_' + tab);
+  if (activeContent) activeContent.style.display = 'block';
+}
+
+async function saveStructuredNote(clientId, noteType, data) {
+  var payload = {
+    expert_id: currentProfile.id,
+    client_id: clientId,
+    note_type: noteType,
+    session_date: data.session_date || new Date().toISOString().split('T')[0]
+  };
+  if (noteType === 'soap') {
+    payload.subjective = data.subjective || null;
+    payload.objective = data.objective || null;
+    payload.assessment = data.assessment || null;
+    payload.plan = data.plan || null;
+  } else if (noteType === 'risk') {
+    payload.risk_level = data.risk_level || null;
+    payload.risk_details = data.risk_details || null;
+  } else if (noteType === 'plan') {
+    payload.goals = data.goals || null;
+    payload.interventions = data.interventions || null;
+    payload.next_session_goals = data.next_session_goals || null;
+  }
+  var res = await sb.from('structured_notes').insert(payload);
+  if (res.error) { showToast('Hata: ' + res.error.message); return false; }
+  showToast('Not kaydedildi');
+  return true;
+}
+
+async function loadStructuredNotes(clientId) {
+  var res = await sb.from('structured_notes').select('*')
+    .eq('client_id', clientId)
+    .order('created_at', { ascending: false });
+  return res.data || [];
+}
+
+async function deleteStructuredNote(noteId) {
+  if (!confirm('Bu notu silmek istediğinize emin misiniz?')) return;
+  var res = await sb.from('structured_notes').delete().eq('id', noteId);
+  if (res.error) { showToast('Hata: ' + res.error.message); return; }
+  showToast('Not silindi');
+}
+
+function renderStructuredNoteForm(type) {
+  var today = new Date().toISOString().split('T')[0];
+  var html = '';
+  if (type === 'soap') {
+    html = '<div class="form-group"><label>Seans Tarihi</label><input type="date" id="soapDate" class="form-input" value="' + today + '"></div>' +
+      '<div class="form-group"><label>Subjektif (S)</label><textarea id="soapS" class="form-input" rows="2" placeholder="Danışanın ifadeleri..."></textarea></div>' +
+      '<div class="form-group"><label>Objektif (O)</label><textarea id="soapO" class="form-input" rows="2" placeholder="Gözlemler ve bulgular..."></textarea></div>' +
+      '<div class="form-group"><label>Değerlendirme (A)</label><textarea id="soapA" class="form-input" rows="2" placeholder="Klinik değerlendirme..."></textarea></div>' +
+      '<div class="form-group"><label>Plan (P)</label><textarea id="soapP" class="form-input" rows="2" placeholder="Tedavi planı..."></textarea></div>';
+  } else if (type === 'risk') {
+    html = '<div class="form-group"><label>Değerlendirme Tarihi</label><input type="date" id="riskDate" class="form-input" value="' + today + '"></div>' +
+      '<div class="form-group"><label>Risk Seviyesi</label><select id="riskLevel" class="form-input"><option value="">Seçiniz</option><option value="düşük">Düşük</option><option value="orta">Orta</option><option value="yüksek">Yüksek</option><option value="acil">Acil</option></select></div>' +
+      '<div class="form-group"><label>Detaylar</label><textarea id="riskDetails" class="form-input" rows="3" placeholder="Risk değerlendirme detayları..."></textarea></div>';
+  } else if (type === 'plan') {
+    html = '<div class="form-group"><label>Tarih</label><input type="date" id="planDate" class="form-input" value="' + today + '"></div>' +
+      '<div class="form-group"><label>Hedefler</label><textarea id="planGoals" class="form-input" rows="2" placeholder="Tedavi hedefleri..."></textarea></div>' +
+      '<div class="form-group"><label>Müdahaleler</label><textarea id="planInterventions" class="form-input" rows="2" placeholder="Planlanan müdahaleler..."></textarea></div>' +
+      '<div class="form-group"><label>Sonraki Seans Hedefleri</label><textarea id="planNextGoals" class="form-input" rows="2" placeholder="Bir sonraki seans için hedefler..."></textarea></div>';
+  }
+  return html;
+}
+
+function renderNoteTimeline(regularNotes, structuredNotes) {
+  var all = [];
+  (regularNotes || []).forEach(function(n) {
+    all.push({ type: 'free', date: n.created_at, content: n.content, id: n.id, source: 'notes' });
+  });
+  (structuredNotes || []).forEach(function(n) {
+    var content = '';
+    if (n.note_type === 'soap') {
+      content = (n.subjective ? 'S: ' + n.subjective + '\n' : '') + (n.objective ? 'O: ' + n.objective + '\n' : '') + (n.assessment ? 'A: ' + n.assessment + '\n' : '') + (n.plan ? 'P: ' + n.plan : '');
+    } else if (n.note_type === 'risk') {
+      content = 'Risk: ' + (n.risk_level || '?') + '\n' + (n.risk_details || '');
+    } else if (n.note_type === 'plan') {
+      content = (n.goals ? 'Hedefler: ' + n.goals + '\n' : '') + (n.interventions ? 'Müdahaleler: ' + n.interventions + '\n' : '') + (n.next_session_goals ? 'Sonraki Seans: ' + n.next_session_goals : '');
+    }
+    all.push({ type: n.note_type, date: n.created_at, content: content, id: n.id, source: 'structured_notes', session_date: n.session_date, risk_level: n.risk_level });
+  });
+  all.sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
+
+  if (all.length === 0) {
+    return '<p style="color:var(--color-text-muted);font-size:var(--text-sm);text-align:center;padding:var(--space-6);">Henüz not eklenmemiş.</p>';
+  }
+
+  var html = '';
+  all.forEach(function(item) {
+    var badgeClass = 'note-type-free';
+    var badgeLabel = 'Serbest';
+    if (item.type === 'soap') { badgeClass = 'note-type-soap'; badgeLabel = 'SOAP'; }
+    else if (item.type === 'risk') { badgeClass = 'note-type-risk'; badgeLabel = 'Risk'; }
+    else if (item.type === 'plan') { badgeClass = 'note-type-plan'; badgeLabel = 'Tedavi Planı'; }
+
+    var riskBadge = '';
+    if (item.type === 'risk' && item.risk_level) {
+      var rlClass = item.risk_level === 'acil' ? 'color:var(--color-error);font-weight:700;' : item.risk_level === 'yüksek' ? 'color:#e67e22;font-weight:600;' : '';
+      riskBadge = ' <span style="' + rlClass + 'font-size:var(--text-xs);">(' + esc(item.risk_level) + ')</span>';
+    }
+
+    html += '<div class="note-item">' +
+      '<div class="note-date">' +
+        '<span class="note-type-badge ' + badgeClass + '">' + badgeLabel + '</span>' + riskBadge +
+        ' — ' + formatDate(item.date) +
+        (item.session_date ? ' (Seans: ' + formatSessionDate(item.session_date) + ')' : '') +
+      '</div>' +
+      '<div class="note-text" style="white-space:pre-wrap;">' + esc(item.content) + '</div>' +
+    '</div>';
+  });
+  return html;
+}
+
+// ==================== HOMEWORK FUNCTIONS ====================
+async function saveHomework(clientId, title, description, dueDate) {
+  if (!title) { showToast('Lütfen ödev başlığı girin.'); return false; }
+  var res = await sb.from('homework').insert({
+    expert_id: currentProfile.id,
+    client_id: clientId,
+    title: title,
+    description: description || null,
+    due_date: dueDate || null,
+    status: 'pending'
+  });
+  if (res.error) { showToast('Hata: ' + res.error.message); return false; }
+  showToast('Ödev atandı');
+  return true;
+}
+
+async function loadHomework(clientId) {
+  var res = await sb.from('homework').select('*')
+    .eq('client_id', clientId)
+    .order('created_at', { ascending: false });
+  return res.data || [];
+}
+
+async function updateHomeworkStatus(homeworkId, status, response) {
+  var payload = { status: status, updated_at: new Date().toISOString() };
+  if (response !== undefined) payload.client_response = response;
+  var res = await sb.from('homework').update(payload).eq('id', homeworkId);
+  if (res.error) { showToast('Hata: ' + res.error.message); return; }
+  showToast(status === 'completed' ? 'Ödev tamamlandı' : 'Ödev güncellendi');
+}
+
+async function deleteHomework(homeworkId) {
+  if (!confirm('Bu ödevi silmek istediğinize emin misiniz?')) return;
+  var res = await sb.from('homework').delete().eq('id', homeworkId);
+  if (res.error) { showToast('Hata: ' + res.error.message); return; }
+  showToast('Ödev silindi');
+}
+
+// ==================== JOURNAL FUNCTIONS ====================
+async function saveJournalEntry(title, content, isShared) {
+  if (!content) { showToast('Lütfen günlük içeriği yazın.'); return false; }
+  var res = await sb.from('journal_entries').insert({
+    client_id: currentProfile.id,
+    title: title || null,
+    content: content,
+    is_shared: isShared || false
+  });
+  if (res.error) { showToast('Hata: ' + res.error.message); return false; }
+  showToast('Günlük kaydedildi');
+  return true;
+}
+
+async function loadJournalEntries(clientId) {
+  var res = await sb.from('journal_entries').select('*')
+    .eq('client_id', clientId)
+    .order('created_at', { ascending: false });
+  return res.data || [];
+}
+
+async function deleteJournalEntry(entryId) {
+  if (!confirm('Bu günlük kaydını silmek istediğinize emin misiniz?')) return;
+  var res = await sb.from('journal_entries').delete().eq('id', entryId);
+  if (res.error) { showToast('Hata: ' + res.error.message); return; }
+  showToast('Günlük silindi');
+  renderClientView();
+}
+
+// ==================== PROGRESS DASHBOARD FUNCTIONS ====================
+async function loadProgressData(clientId) {
+  var sessionsRes = await sb.from('scheduled_sessions').select('*').eq('client_id', clientId);
+  var sessions = sessionsRes.data || [];
+  var completed = sessions.filter(function(s) { return s.status === 'completed'; });
+  var cancelled = sessions.filter(function(s) { return s.status === 'cancelled'; });
+  var totalSessions = completed.length;
+  var attendanceRate = (completed.length + cancelled.length) > 0 ? Math.round((completed.length / (completed.length + cancelled.length)) * 100) : 0;
+  var lastSession = completed.length > 0 ? completed.sort(function(a, b) { return b.session_date.localeCompare(a.session_date); })[0].session_date : null;
+
+  // Mood trend
+  var now = new Date();
+  var d7 = new Date(); d7.setDate(now.getDate() - 7);
+  var d14 = new Date(); d14.setDate(now.getDate() - 14);
+  var moodRes = await sb.from('mood_entries').select('*').eq('client_id', clientId).gte('created_at', d14.toISOString()).order('created_at');
+  var moods = moodRes.data || [];
+  var recent7 = moods.filter(function(m) { return new Date(m.created_at) >= d7; });
+  var prev7 = moods.filter(function(m) { return new Date(m.created_at) < d7; });
+  var avgRecent = recent7.length > 0 ? recent7.reduce(function(s, m) { return s + m.mood_score; }, 0) / recent7.length : 0;
+  var avgPrev = prev7.length > 0 ? prev7.reduce(function(s, m) { return s + m.mood_score; }, 0) / prev7.length : 0;
+  var moodTrend = recent7.length > 0 ? (avgRecent > avgPrev ? 'up' : avgRecent < avgPrev ? 'down' : 'stable') : 'none';
+
+  // Notes count
+  var notesRes = await sb.from('notes').select('id', { count: 'exact', head: true }).eq('client_id', clientId);
+  var structNotesRes = await sb.from('structured_notes').select('id', { count: 'exact', head: true }).eq('client_id', clientId);
+  var totalNotes = (notesRes.count || 0) + (structNotesRes.count || 0);
+
+  // Homework
+  var hwRes = await sb.from('homework').select('*').eq('client_id', clientId);
+  var hw = hwRes.data || [];
+  var hwCompleted = hw.filter(function(h) { return h.status === 'completed'; }).length;
+  var hwTotal = hw.length;
+
+  return {
+    totalSessions: totalSessions,
+    attendanceRate: attendanceRate,
+    lastSession: lastSession,
+    moodTrend: moodTrend,
+    avgMood: avgRecent,
+    totalNotes: totalNotes,
+    allSessions: sessions,
+    hwCompleted: hwCompleted,
+    hwTotal: hwTotal
+  };
+}
+
+function renderProgressDashboard(data) {
+  var lastSessionStr = data.lastSession ? formatSessionDate(data.lastSession) : 'Yok';
+  var trendHtml = '';
+  if (data.moodTrend === 'up') trendHtml = '<span class="trend-up">↑ ' + data.avgMood.toFixed(1) + '</span>';
+  else if (data.moodTrend === 'down') trendHtml = '<span class="trend-down">↓ ' + data.avgMood.toFixed(1) + '</span>';
+  else if (data.moodTrend === 'stable') trendHtml = '<span style="color:var(--color-text-muted);">→ ' + data.avgMood.toFixed(1) + '</span>';
+  else trendHtml = '<span style="color:var(--color-text-faint);">—</span>';
+
+  return '<div class="progress-grid">' +
+    '<div class="progress-card"><div class="progress-value">' + data.totalSessions + '</div><div class="progress-label">Toplam Seans</div></div>' +
+    '<div class="progress-card"><div class="progress-value">' + data.attendanceRate + '%</div><div class="progress-label">Devam Oranı</div></div>' +
+    '<div class="progress-card"><div class="progress-value" style="font-size:var(--text-sm);">' + lastSessionStr + '</div><div class="progress-label">Son Seans</div></div>' +
+    '<div class="progress-card"><div class="progress-value">' + trendHtml + '</div><div class="progress-label">Duygu Trendi</div></div>' +
+    '<div class="progress-card"><div class="progress-value">' + data.totalNotes + '</div><div class="progress-label">Toplam Not</div></div>' +
+  '</div>';
+}
+
 // ==================== ENHANCED ADMIN VIEW (add Dashboard + Mesajlar tab) ====================
 // Override renderAdminView to add new tabs
 var _originalRenderAdminView = renderAdminView;
@@ -2020,30 +2583,43 @@ renderExpertView = async function() {
   main.innerHTML = html;
 };
 
-// ==================== ENHANCED CLIENT VIEW (add messaging) ====================
+// ==================== ENHANCED CLIENT VIEW (Tabbed Self-Service Portal) ====================
+var currentClientTab = 'home';
 var _originalRenderClientView = renderClientView;
-renderClientView = async function() {
-  var main = document.getElementById("mainContent");
-  main.innerHTML = '<div class="empty-state"><div class="loading-spinner"></div><p>Yükleniyor...</p></div>';
 
-  var assignRes = await sb.from("assignments").select("*, expert:expert_id(id, full_name, specialty, email)").eq("client_id", currentProfile.id);
-  var assignment = (assignRes.data || [])[0];
+function switchClientTab(tab) {
+  currentClientTab = tab;
+  document.querySelectorAll('.client-tab-btn').forEach(function(b) { b.classList.remove('active'); });
+  var activeBtn = document.querySelector('.client-tab-btn[data-tab="' + tab + '"]');
+  if (activeBtn) activeBtn.classList.add('active');
+  renderClientTabContent();
+}
 
-  var today = new Date().toISOString().split("T")[0];
-  var sessionsRes = await sb.from("scheduled_sessions")
-    .select("*, expert:expert_id(id, full_name)")
-    .eq("client_id", currentProfile.id)
-    .gte("session_date", today)
-    .order("session_date")
-    .order("start_time");
-  var upcomingSessions = sessionsRes.data || [];
+async function renderClientTabContent() {
+  var contentEl = document.getElementById('clientTabContent');
+  if (!contentEl) return;
+  contentEl.innerHTML = '<div class="empty-state"><div class="loading-spinner"></div><p>Yükleniyor...</p></div>';
 
-  var html = '<div class="page-header"><h2 class="page-title">Hoş Geldiniz, ' + esc(currentProfile.full_name.split(" ")[0]) + '</h2></div>';
+  var clientData = window._clientPortalData;
+  if (!clientData) return;
 
-  if (!assignment || !assignment.expert) {
-    html += '<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg><h3>Henüz bir uzman atanmadı</h3><p>Size bir uzman atandığında burada görüşme bilgileri görünecektir.</p></div>';
-  } else {
-    var expert = assignment.expert;
+  var html = '';
+  if (currentClientTab === 'home') {
+    html = await renderClientHomeTab(clientData);
+  } else if (currentClientTab === 'homework') {
+    html = await renderClientHomeworkTab(clientData);
+  } else if (currentClientTab === 'journal') {
+    html = await renderClientJournalTab(clientData);
+  } else if (currentClientTab === 'progress') {
+    html = await renderClientProgressTab(clientData);
+  }
+  contentEl.innerHTML = html;
+}
+
+async function renderClientHomeTab(data) {
+  var html = '';
+  if (data.expert) {
+    var expert = data.expert;
     var unreadCount = await getUnreadCount(expert.id);
     var unreadBadge = unreadCount > 0 ? ' <span class="unread-badge">' + unreadCount + '</span>' : '';
     html +=
@@ -2060,37 +2636,246 @@ renderClientView = async function() {
             '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Mesaj' + unreadBadge + '</button>' +
         '</div>' +
       '</div>';
-
-    // Upcoming sessions for client
-    html += '<div class="upcoming-sessions-section" style="max-width:480px;margin-top:var(--space-6);">';
-    html += '<h3 class="section-title">Yaklaşan Seanslar</h3>';
-
-    if (upcomingSessions.length === 0) {
-      html += '<p class="no-sessions-msg">Yaklaşan planlanmış seans bulunmuyor.</p>';
-    } else {
-      html += '<div class="session-list session-list-compact">';
-      upcomingSessions.forEach(function(sess) {
-        var expertName = sess.expert ? sess.expert.full_name : "?";
-        var statusClass = sess.status === "completed" ? "session-status-completed" : sess.status === "cancelled" ? "session-status-cancelled" : "session-status-planned";
-        var statusLabel = sess.status === "completed" ? "Tamamlandı" : sess.status === "cancelled" ? "İptal" : "Planlandı";
-        html +=
-          '<div class="session-card session-card-compact">' +
-            '<div class="session-card-date">' +
-              '<div class="session-day">' + formatSessionDate(sess.session_date) + '</div>' +
-              '<div class="session-time">' + sess.start_time.substring(0, 5) + ' – ' + sess.end_time.substring(0, 5) + '</div>' +
-            '</div>' +
-            '<div class="session-card-info">' +
-              '<div class="session-names"><span class="session-expert">' + esc(expertName) + '</span></div>' +
-            '</div>' +
-            '<span class="session-status ' + statusClass + '">' + statusLabel + '</span>' +
-          '</div>';
-      });
-      html += '</div>';
-    }
-    html += '</div>';
   }
 
+  // Upcoming sessions
+  var today = new Date().toISOString().split("T")[0];
+  var upcoming = (data.allSessions || []).filter(function(s) { return s.session_date >= today && s.status !== 'cancelled'; });
+  upcoming.sort(function(a, b) { return (a.session_date + a.start_time).localeCompare(b.session_date + b.start_time); });
+
+  html += '<div style="max-width:480px;margin-top:var(--space-6);">';
+  html += '<h3 class="section-title">Yaklaşan Seanslar</h3>';
+  if (upcoming.length === 0) {
+    html += '<p class="no-sessions-msg">Yaklaşan planlanmış seans bulunmuyor.</p>';
+  } else {
+    html += '<div class="session-list session-list-compact">';
+    upcoming.forEach(function(sess) {
+      var expertName = sess.expert ? sess.expert.full_name : "?";
+      var statusClass = sess.status === "completed" ? "session-status-completed" : sess.status === "cancelled" ? "session-status-cancelled" : "session-status-planned";
+      var statusLabel = sess.status === "completed" ? "Tamamlandı" : sess.status === "cancelled" ? "İptal" : "Planlandı";
+      html +=
+        '<div class="session-card session-card-compact">' +
+          '<div class="session-card-date">' +
+            '<div class="session-day">' + formatSessionDate(sess.session_date) + '</div>' +
+            '<div class="session-time">' + sess.start_time.substring(0, 5) + ' – ' + sess.end_time.substring(0, 5) + '</div>' +
+          '</div>' +
+          '<div class="session-card-info">' +
+            '<div class="session-names"><span class="session-expert">' + esc(expertName) + '</span></div>' +
+          '</div>' +
+          '<span class="session-status ' + statusClass + '">' + statusLabel + '</span>' +
+        '</div>';
+    });
+    html += '</div>';
+  }
+  html += '</div>';
+
+  // Mood Tracking Widget
+  var moodEntries = await loadMoodEntries(currentProfile.id, 7);
+  html += '<div class="card" style="max-width:480px;margin-top:var(--space-6);">' +
+    '<div class="card-header"><h3 class="card-title">Duygu Takip</h3></div>' +
+    '<p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-3);">Bugün kendinizi nasıl hissediyorsunuz?</p>' +
+    renderMoodSelector() +
+    '<div class="form-group" style="margin-top:var(--space-3);">' +
+      '<textarea id="moodNote" class="form-input" rows="2" placeholder="Notunuz (isteğe bağlı)..."></textarea>' +
+    '</div>' +
+    '<button class="btn btn-primary btn-full" onclick="saveMoodEntry(selectedMoodScore, selectedMoodLabel, document.getElementById(\'moodNote\').value.trim())">Bugünkü Ruh Halimi Kaydet</button>' +
+    '<div style="margin-top:var(--space-4);">' +
+      '<h4 style="font-size:var(--text-sm);font-weight:600;margin-bottom:var(--space-2);">Son 7 Gün</h4>' +
+      renderMoodTimeline(moodEntries) +
+    '</div>' +
+  '</div>';
+
+  return html;
+}
+
+async function renderClientHomeworkTab(data) {
+  var homework = await loadHomework(currentProfile.id);
+  var html = '<h3 class="section-title">Ödevlerim</h3>';
+
+  if (homework.length === 0) {
+    html += '<div class="empty-state" style="padding:var(--space-8);"><h3>Henüz ödev yok</h3><p>Uzmanınız size ödev verdiğinde burada görünecektir.</p></div>';
+  } else {
+    homework.forEach(function(hw) {
+      var statusClass = hw.status === 'completed' ? 'homework-status-completed' : 'homework-status-pending';
+      var statusLabel = hw.status === 'completed' ? 'Tamamlandı' : 'Bekliyor';
+      html += '<div class="homework-card">' +
+        '<div class="homework-header">' +
+          '<span class="homework-title">' + esc(hw.title) + '</span>' +
+          '<span class="homework-status ' + statusClass + '">' + statusLabel + '</span>' +
+        '</div>' +
+        (hw.description ? '<div class="homework-desc">' + esc(hw.description) + '</div>' : '') +
+        (hw.due_date ? '<div class="homework-due">Son tarih: ' + formatSessionDate(hw.due_date) + '</div>' : '');
+
+      if (hw.status === 'pending') {
+        html += '<div class="homework-response">' +
+          '<textarea id="hwResponse_' + hw.id + '" class="form-input" rows="2" placeholder="Yanıtınızı yazın...">' + esc(hw.client_response || '') + '</textarea>' +
+          '<div style="display:flex;gap:var(--space-2);margin-top:var(--space-2);">' +
+            '<button class="btn btn-success btn-sm" onclick="completeHomework(' + hw.id + ')">Tamamlandı Olarak İşaretle</button>' +
+          '</div>' +
+        '</div>';
+      } else if (hw.client_response) {
+        html += '<div style="margin-top:var(--space-3);padding-top:var(--space-3);border-top:1px solid var(--color-divider);">' +
+          '<div style="font-size:var(--text-xs);color:var(--color-text-muted);margin-bottom:var(--space-1);">Yanıtınız:</div>' +
+          '<div style="font-size:var(--text-sm);">' + esc(hw.client_response) + '</div>' +
+        '</div>';
+      }
+
+      html += '</div>';
+    });
+  }
+  return html;
+}
+
+async function completeHomework(hwId) {
+  var responseEl = document.getElementById('hwResponse_' + hwId);
+  var response = responseEl ? responseEl.value.trim() : '';
+  await updateHomeworkStatus(hwId, 'completed', response);
+  renderClientTabContent();
+}
+
+async function renderClientJournalTab(data) {
+  var entries = await loadJournalEntries(currentProfile.id);
+  var html = '<h3 class="section-title">Günlüğüm</h3>';
+
+  // Form
+  html += '<div class="card" style="margin-bottom:var(--space-6);">' +
+    '<div class="form-group"><label>Başlık</label><input type="text" id="journalTitle" class="form-input" placeholder="Günlük başlığı (isteğe bağlı)"></div>' +
+    '<div class="form-group"><label>İçerik</label><textarea id="journalContent" class="form-input" rows="4" placeholder="Günlüğünüzü yazın..."></textarea></div>' +
+    '<div style="display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-3);">' +
+      '<label style="display:flex;align-items:center;gap:var(--space-2);font-size:var(--text-sm);cursor:pointer;">' +
+        '<input type="checkbox" id="journalShared" style="width:18px;height:18px;accent-color:var(--color-primary);">' +
+        'Uzmanla Paylaş' +
+      '</label>' +
+    '</div>' +
+    '<button class="btn btn-primary" onclick="submitJournal()">Kaydet</button>' +
+  '</div>';
+
+  // Entries list
+  if (entries.length === 0) {
+    html += '<p style="color:var(--color-text-muted);font-size:var(--text-sm);text-align:center;padding:var(--space-6);">Henüz günlük kaydı yok.</p>';
+  } else {
+    entries.forEach(function(e) {
+      html += '<div class="journal-entry">' +
+        '<div class="journal-header">' +
+          '<div>' +
+            '<span class="journal-title">' + esc(e.title || 'Başlıksız') + '</span>' +
+            (e.is_shared ? ' <span class="journal-shared-badge">Paylaşıldı</span>' : '') +
+          '</div>' +
+          '<div style="display:flex;align-items:center;gap:var(--space-2);">' +
+            '<span class="journal-date">' + formatDate(e.created_at) + '</span>' +
+            '<button class="btn btn-ghost btn-sm" onclick="deleteJournalEntry(' + e.id + ')" title="Sil" style="color:var(--color-error);padding:var(--space-1);">' +
+              '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="journal-content">' + esc(e.content) + '</div>' +
+      '</div>';
+    });
+  }
+  return html;
+}
+
+async function submitJournal() {
+  var title = document.getElementById('journalTitle').value.trim();
+  var content = document.getElementById('journalContent').value.trim();
+  var isShared = document.getElementById('journalShared').checked;
+  var ok = await saveJournalEntry(title, content, isShared);
+  if (ok) renderClientTabContent();
+}
+
+async function renderClientProgressTab(data) {
+  var moodEntries = await loadMoodEntries(currentProfile.id, 30);
+  var progressData = await loadProgressData(currentProfile.id);
+  var html = '<h3 class="section-title">İlerleme</h3>';
+
+  // Mood chart
+  html += '<div class="card" style="margin-bottom:var(--space-4);">' +
+    '<div class="card-header"><h3 class="card-title">Duygu Grafiği (Son 30 Gün)</h3></div>' +
+    renderMoodChart(moodEntries) +
+  '</div>';
+
+  // Session history (ALL sessions)
+  var allSessions = progressData.allSessions || [];
+  allSessions.sort(function(a, b) { return b.session_date.localeCompare(a.session_date); });
+
+  html += '<div class="card" style="margin-bottom:var(--space-4);">' +
+    '<div class="card-header"><h3 class="card-title">Seans Geçmişi</h3></div>';
+
+  if (allSessions.length === 0) {
+    html += '<p style="color:var(--color-text-muted);font-size:var(--text-sm);text-align:center;padding:var(--space-4);">Henüz seans kaydı yok.</p>';
+  } else {
+    html += '<div class="session-list session-list-compact">';
+    allSessions.forEach(function(sess) {
+      var statusClass = sess.status === "completed" ? "session-status-completed" : sess.status === "cancelled" ? "session-status-cancelled" : "session-status-planned";
+      var statusLabel = sess.status === "completed" ? "Tamamlandı" : sess.status === "cancelled" ? "İptal" : "Planlandı";
+      html +=
+        '<div class="session-card session-card-compact">' +
+          '<div class="session-card-date">' +
+            '<div class="session-day">' + formatSessionDate(sess.session_date) + '</div>' +
+            '<div class="session-time">' + sess.start_time.substring(0, 5) + ' – ' + sess.end_time.substring(0, 5) + '</div>' +
+          '</div>' +
+          '<div class="session-card-info">' +
+            '<div class="session-names"><span class="session-expert">' + esc(sess.expert_id ? 'Uzman' : '?') + '</span></div>' +
+          '</div>' +
+          '<span class="session-status ' + statusClass + '">' + statusLabel + '</span>' +
+        '</div>';
+    });
+    html += '</div>';
+  }
+  html += '</div>';
+
+  // Homework completion rate
+  html += '<div class="card">' +
+    '<div class="card-header"><h3 class="card-title">Ödev Durumu</h3></div>' +
+    '<div class="progress-grid">' +
+      '<div class="progress-card"><div class="progress-value">' + progressData.hwCompleted + '/' + progressData.hwTotal + '</div><div class="progress-label">Tamamlanan Ödev</div></div>' +
+      '<div class="progress-card"><div class="progress-value">' + (progressData.hwTotal > 0 ? Math.round((progressData.hwCompleted / progressData.hwTotal) * 100) : 0) + '%</div><div class="progress-label">Tamamlanma Oranı</div></div>' +
+    '</div>' +
+  '</div>';
+
+  return html;
+}
+
+renderClientView = async function() {
+  var main = document.getElementById("mainContent");
+  main.innerHTML = '<div class="empty-state"><div class="loading-spinner"></div><p>Yükleniyor...</p></div>';
+
+  var assignRes = await sb.from("assignments").select("*, expert:expert_id(id, full_name, specialty, email, areas_of_expertise)").eq("client_id", currentProfile.id);
+  var assignment = (assignRes.data || [])[0];
+
+  // Load ALL sessions (not just upcoming)
+  var sessionsRes = await sb.from("scheduled_sessions")
+    .select("*, expert:expert_id(id, full_name)")
+    .eq("client_id", currentProfile.id)
+    .order("session_date")
+    .order("start_time");
+  var allSessions = sessionsRes.data || [];
+
+  // Store data for tabs
+  window._clientPortalData = {
+    expert: assignment ? assignment.expert : null,
+    allSessions: allSessions
+  };
+
+  var html = '<div class="page-header"><h2 class="page-title">Hoş Geldiniz, ' + esc(currentProfile.full_name.split(" ")[0]) + '</h2></div>';
+
+  if (!assignment || !assignment.expert) {
+    html += '<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg><h3>Henüz bir uzman atanmadı</h3><p>Size bir uzman atandığında burada görüşme bilgileri görünecektir.</p></div>';
+    main.innerHTML = html;
+    return;
+  }
+
+  // Tab navigation
+  html += '<div class="client-tabs">' +
+    '<button class="client-tab-btn active" data-tab="home" onclick="switchClientTab(\'home\')">Ana Sayfa</button>' +
+    '<button class="client-tab-btn" data-tab="homework" onclick="switchClientTab(\'homework\')">Ödevlerim</button>' +
+    '<button class="client-tab-btn" data-tab="journal" onclick="switchClientTab(\'journal\')">Günlüğüm</button>' +
+    '<button class="client-tab-btn" data-tab="progress" onclick="switchClientTab(\'progress\')">İlerleme</button>' +
+  '</div>' +
+  '<div id="clientTabContent"></div>';
+
   main.innerHTML = html;
+  currentClientTab = 'home';
+  renderClientTabContent();
 };
 
 // ==================== EXPERT PROFILE EDIT ====================
