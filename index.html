@@ -8,8 +8,7 @@
 / /___/ /_/ / / / / / / /_/ / /_/ / /_/  __/ /
 \____/\____/_/ /_/ /_/ .___/\__,_/\__/\___/_/
                     /_/
-        Created with Perplexity Computer
-        https://www.perplexity.ai/computer
+      
 -->
 <meta name="generator" content="Perplexity Computer">
 <meta name="author" content="Perplexity Computer">
@@ -165,6 +164,66 @@
       <select id="clientExpertSelect" class="form-input">
         <option value="">Uzman seçiniz</option>
       </select>
+    </div>
+    <div class="form-divider" style="border-top:1px solid var(--color-border);margin:var(--space-4) 0;padding-top:var(--space-2);">
+      <span style="font-size:var(--text-sm);font-weight:600;color:var(--color-text-muted);">Detaylı Bilgiler</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-3);">
+      <div class="form-group">
+        <label>Yaş</label>
+        <input type="number" id="clientAge" class="form-input" placeholder="Örn: 32" min="1" max="120">
+      </div>
+      <div class="form-group">
+        <label>Cinsiyet</label>
+        <select id="clientGender" class="form-input">
+          <option value="">Seçiniz</option>
+          <option value="Kadın">Kadın</option>
+          <option value="Erkek">Erkek</option>
+          <option value="Diğer">Diğer</option>
+          <option value="Belirtmek istemiyorum">Belirtmek istemiyorum</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Medeni Durum</label>
+      <select id="clientMaritalStatus" class="form-input">
+        <option value="">Seçiniz</option>
+        <option value="Bekâr">Bekâr</option>
+        <option value="Evli">Evli</option>
+        <option value="Boşanmış">Boşanmış</option>
+        <option value="Dul">Dul</option>
+        <option value="Diğer">Diğer</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Seans Ücreti (karşılanan)</label>
+      <input type="text" id="clientSessionFee" class="form-input" placeholder="Örn: 1500 TL">
+    </div>
+    <div class="form-group">
+      <label>Uygun Saatler</label>
+      <input type="text" id="clientAvailableHours" class="form-input" placeholder="Örn: Hafta içi 10:00-14:00">
+    </div>
+    <div class="form-group">
+      <label>Daha Önce Terapi Almış mı?</label>
+      <select id="clientPreviousTherapy" class="form-input">
+        <option value="">Seçiniz</option>
+        <option value="Evet">Evet</option>
+        <option value="Hayır">Hayır</option>
+        <option value="Bilinmiyor">Bilinmiyor</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>İlaç Kullanımı</label>
+      <select id="clientMedicationUse" class="form-input">
+        <option value="">Seçiniz</option>
+        <option value="Evet">Evet</option>
+        <option value="Hayır">Hayır</option>
+        <option value="Bilinmiyor">Bilinmiyor</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Ön Görüşme Özeti</label>
+      <textarea id="clientPreInterviewSummary" class="form-input" rows="3" placeholder="Danışanla yapılan ön görüşmenin özeti..."></textarea>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('clientModal')">İptal</button>
