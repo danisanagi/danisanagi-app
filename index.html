@@ -105,14 +105,8 @@
     </div>
     <div class="form-group">
       <label>Danışan Alma Hakkı</label>
-      <select id="expertClientCapacity" class="form-input">
-        <option value="">Belirlenmemiş</option>
-        <option value="0">0 — Yeni danışan alamaz</option>
-        <option value="3">3 danışan</option>
-        <option value="6">6 danışan</option>
-        <option value="9">9 danışan</option>
-        <option value="12">12 danışan</option>
-      </select>
+      <input type="number" id="expertClientCapacity" class="form-input" placeholder="Örn: 6" min="0" max="50" step="1">
+      <span class="form-hint">Maksimum danışan sayısı (boş bırakılırsa belirlenmemiş)</span>
     </div>
     <div class="form-row">
       <div class="form-group">
