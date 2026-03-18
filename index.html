@@ -125,6 +125,30 @@
   </div>
 </div>
 
+<!-- Announcement Modal -->
+<div id="announcementModal" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title">Yeni Duyuru</h3>
+      <button class="modal-close" onclick="closeModal('announcementModal')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
+    </div>
+    <div class="form-group">
+      <label>Başlık</label>
+      <input type="text" id="announcementTitle" class="form-input" placeholder="Duyuru başlığı">
+    </div>
+    <div class="form-group">
+      <label>İçerik</label>
+      <textarea id="announcementContent" class="form-input" rows="6" placeholder="Duyuru içeriğini yazın..."></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('announcementModal')">İptal</button>
+      <button class="btn btn-primary" onclick="saveAnnouncement()">Yayınla</button>
+    </div>
+  </div>
+</div>
+
 <!-- Add/Edit Client Modal -->
 <div id="clientModal" class="modal-overlay">
   <div class="modal">
