@@ -118,6 +118,21 @@
         <input type="date" id="expertContractEnd" class="form-input">
       </div>
     </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Çalışma Modeli</label>
+        <select id="expertWorkModel" class="form-input">
+          <option value="">Seçiniz</option>
+          <option value="contract">Sözleşmeli Çalışan Uzman</option>
+          <option value="commission">Komisyonlu Çalışan Uzman</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Aylık Hizmet Bedeli (₺)</label>
+        <input type="number" id="expertMonthlyFee" class="form-input" placeholder="Örn: 4380" min="0" step="1">
+        <span class="form-hint">Sözleşmeli: 4.380₺ / Komisyonlu: 1.590₺</span>
+      </div>
+    </div>
     <div class="form-group">
       <label>IBAN</label>
       <input type="text" id="expertIban" class="form-input" placeholder="TR00 0000 0000 0000 0000 0000 00" maxlength="32">
