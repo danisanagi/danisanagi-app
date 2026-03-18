@@ -3568,12 +3568,12 @@ async function openGeneratePayments() {
   }
   html += '</tbody></table></div>';
 
-  document.getElementById('confirmMessage').innerHTML = html;
-  document.getElementById('confirmOkBtn').onclick = function() {
-    closeModal('confirmModal');
+  document.getElementById('paymentConfirmBody').innerHTML = html;
+  document.getElementById('paymentConfirmOkBtn').onclick = function() {
+    closeModal('paymentConfirmModal');
     executeGeneratePayments(eligibleExperts);
   };
-  openModal('confirmModal');
+  openModal('paymentConfirmModal');
 }
 
 async function executeGeneratePayments(experts) {
