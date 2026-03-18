@@ -56,24 +56,40 @@ async function checkSession() {
 // ==================== LOGIN / LOGOUT ====================
 // ==================== LOGIN LOG SYSTEM ====================
 var _cachedIp = null;
-async function getUserIp() {
-  if (_cachedIp) return _cachedIp;
-  try {
-    var r = await fetch('https://api.ipify.org?format=json');
-    var d = await r.json();
-    _cachedIp = d.ip || null;
-    return _cachedIp;
-  } catch (e) { return null; }
+var _ipApis = [
+  'https://api.ipify.org?format=json',
+  'https://api64.ipify.org?format=json',
+  'https://ipapi.co/json',
+  'https://api.db-ip.com/v2/free/self'
+];
+function _tryFetchIp(urls, idx) {
+  if (idx >= urls.length) return;
+  fetch(urls[idx]).then(function(r) { return r.json(); }).then(function(d) {
+    _cachedIp = d.ip || d.ipAddress || null;
+  }).catch(function() { _tryFetchIp(urls, idx + 1); });
+}
+_tryFetchIp(_ipApis, 0);
+
+async function fetchIpDirect() {
+  for (var i = 0; i < _ipApis.length; i++) {
+    try {
+      var r = await fetch(_ipApis[i]);
+      var d = await r.json();
+      var ip = d.ip || d.ipAddress || null;
+      if (ip) { _cachedIp = ip; return ip; }
+    } catch(e) {}
+  }
+  return null;
 }
 
 async function logLoginEvent(userId, eventType) {
   try {
-    var ip = await getUserIp();
+    if (!_cachedIp) await fetchIpDirect();
     await sb.from("login_logs").insert({
       user_id: userId,
       event_type: eventType,
       timestamp: new Date().toISOString(),
-      ip_address: ip,
+      ip_address: _cachedIp,
       user_agent: navigator.userAgent || null
     });
   } catch (e) { /* silent fail — log should not block UX */ }
@@ -103,10 +119,8 @@ async function handleLogin() {
     }
     currentUser = result.data.user;
     await loadProfile();
-    // Log login event for experts
-    if (currentProfile && currentProfile.role === "expert") {
-      await logLoginEvent(currentUser.id, "login");
-    }
+    // Log login event for all users
+    await logLoginEvent(currentUser.id, "login");
     showApp();
   } catch (e) {
     errEl.textContent = "Bağlantı hatası: " + e.message;
@@ -115,8 +129,8 @@ async function handleLogin() {
 }
 
 async function handleLogout() {
-  // Log logout event for experts before signing out
-  if (currentProfile && currentProfile.role === "expert" && currentUser) {
+  // Log logout event before signing out
+  if (currentUser) {
     await logLoginEvent(currentUser.id, "logout");
   }
   if (sb) await sb.auth.signOut();
@@ -3185,9 +3199,13 @@ async function renderAdminLoginLogsTab() {
   var res = await query;
   _loginLogsCache = res.data || [];
 
-  // Build expert lookup
+  // Build user lookup (experts + clients + admin)
   var expertMap = {};
   experts.forEach(function(e) { expertMap[e.id] = e.full_name; });
+  var clients = (d && d.clients) || [];
+  clients.forEach(function(c) { expertMap[c.id] = c.full_name; });
+  // Add admin
+  expertMap['cfdf92f1-4bbc-48c4-bd62-47d23ea42d91'] = 'Admin';
 
   renderLoginLogsContent(experts, expertMap);
 }
@@ -3199,7 +3217,7 @@ function renderLoginLogsContent(experts, expertMap) {
   var html =
     '<div class="page-header">' +
       '<h2 class="section-title">Giri\u015f / \u00c7\u0131k\u0131\u015f Loglar\u0131</h2>' +
-      '<p style="color:var(--text-secondary);font-size:0.92rem;margin-top:4px;">Uzmanlar\u0131n panele giri\u015f ve \u00e7\u0131k\u0131\u015f saatleri (GMT+3)</p>' +
+      '<p style="color:var(--text-secondary);font-size:0.92rem;margin-top:4px;">Panele giri\u015f ve \u00e7\u0131k\u0131\u015f kay\u0131tlar\u0131 (GMT+3)</p>' +
     '</div>' +
     '<div class="login-logs-filters">' +
       '<div class="filter-row">' +
