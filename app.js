@@ -204,11 +204,17 @@ function renderAdminExpertsTab() {
         areasHtml = '<div class="expert-areas">' + areasList.map(function(a) { return '<span class="area-tag">' + esc(a) + '</span>'; }).join('') + '</div>';
       }
     }
+    var capacityHtml = '';
+    if (expert.client_capacity != null) {
+      var capRatio = clientCount + '/' + expert.client_capacity;
+      var capClass = clientCount >= expert.client_capacity ? 'capacity-full' : (clientCount >= expert.client_capacity * 0.8 ? 'capacity-warning' : 'capacity-ok');
+      capacityHtml = '<span class="capacity-badge ' + capClass + '">' + capRatio + '</span>';
+    }
     html +=
       '<div class="user-card" data-name="' + expert.full_name.toLowerCase() + '">' +
         '<div class="user-card-avatar expert-avatar">' + getInitials(expert.full_name) + '</div>' +
         '<div class="user-card-info">' +
-          '<div class="user-card-name">' + esc(expert.full_name) + '</div>' +
+          '<div class="user-card-name">' + esc(expert.full_name) + capacityHtml + '</div>' +
           '<div class="user-card-detail">' + esc(expert.specialty || "Belirtilmemiş") + ' — ' + clientCount + ' danışan</div>' +
           areasHtml +
           contractInfo +
@@ -592,6 +598,7 @@ function openAddExpert() {
   document.getElementById("expertSpecialty").value = "";
   document.getElementById("expertAreas").value = "";
   document.getElementById("expertPhone").value = "";
+  document.getElementById("expertClientCapacity").value = "";
   document.getElementById("expertContractStart").value = "";
   document.getElementById("expertContractEnd").value = "";
   document.getElementById("expertPassword").style.display = "";
@@ -613,6 +620,7 @@ function openEditExpert(id) {
   document.getElementById("expertSpecialty").value = expert.specialty || "";
   document.getElementById("expertAreas").value = expert.areas_of_expertise || "";
   document.getElementById("expertPhone").value = expert.phone || "";
+  document.getElementById("expertClientCapacity").value = expert.client_capacity != null ? expert.client_capacity : "";
   document.getElementById("expertContractStart").value = expert.contract_start || "";
   document.getElementById("expertContractEnd").value = expert.contract_end || "";
   openModal("expertModal");
@@ -630,6 +638,8 @@ async function saveExpert() {
   var specialty = document.getElementById("expertSpecialty").value.trim();
   var areas = document.getElementById("expertAreas").value.trim();
   var phone = document.getElementById("expertPhone").value.trim();
+  var capacityVal = document.getElementById("expertClientCapacity").value;
+  var clientCapacity = capacityVal !== "" ? parseInt(capacityVal) : null;
   var contractStart = document.getElementById("expertContractStart").value || null;
   var contractEnd = document.getElementById("expertContractEnd").value || null;
 
@@ -645,6 +655,7 @@ async function saveExpert() {
       specialty: specialty,
       areas_of_expertise: areas || null,
       phone: phone,
+      client_capacity: clientCapacity,
       contract_start: contractStart,
       contract_end: contractEnd,
       updated_at: new Date().toISOString()
@@ -672,7 +683,8 @@ async function saveExpert() {
         role: "expert",
         specialty: specialty,
         areas_of_expertise: areas || null,
-        phone: phone
+        phone: phone,
+        client_capacity: clientCapacity
       })
     });
     var data = await res.json();
