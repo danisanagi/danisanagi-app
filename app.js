@@ -247,6 +247,12 @@ function renderAdminExpertsTab() {
       var formattedIban = expert.iban.replace(/(\w{4})/g, '$1 ').trim();
       ibanInfo = '<div class="user-card-detail" style="font-size:11px;color:var(--color-text-faint);">IBAN: ' + esc(formattedIban) + '</div>';
     }
+    var workModelInfo = '';
+    if (expert.work_model) {
+      var wmLabel = expert.work_model === 'contract' ? 'S\u00F6zle\u015Fmeli' : 'Komisyonlu';
+      var feeLabel = expert.monthly_fee ? ' — ' + formatCurrency(parseFloat(expert.monthly_fee)) + '/ay' : '';
+      workModelInfo = '<div class="user-card-detail" style="font-size:11px;color:var(--color-text-faint);">Model: ' + wmLabel + feeLabel + '</div>';
+    }
     var areasHtml = '';
     if (expert.areas_of_expertise) {
       var areasList = expert.areas_of_expertise.split(',').map(function(a) { return a.trim(); }).filter(function(a) { return a; });
@@ -268,6 +274,7 @@ function renderAdminExpertsTab() {
           '<div class="user-card-detail">' + esc(expert.specialty || "Belirtilmemiş") + ' — ' + clientCount + ' danışan</div>' +
           areasHtml +
           contractInfo +
+          workModelInfo +
           ibanInfo +
         '</div>' +
         '<div class="user-card-actions">' +
@@ -653,6 +660,8 @@ function openAddExpert() {
   document.getElementById("expertContractStart").value = "";
   document.getElementById("expertContractEnd").value = "";
   document.getElementById("expertIban").value = "";
+  document.getElementById("expertWorkModel").value = "";
+  document.getElementById("expertMonthlyFee").value = "";
   document.getElementById("expertPassword").style.display = "";
   document.getElementById("expertPasswordHint").style.display = "";
   document.getElementById("expertEmail").disabled = false;
@@ -676,6 +685,8 @@ function openEditExpert(id) {
   document.getElementById("expertContractStart").value = expert.contract_start || "";
   document.getElementById("expertContractEnd").value = expert.contract_end || "";
   document.getElementById("expertIban").value = expert.iban || "";
+  document.getElementById("expertWorkModel").value = expert.work_model || "";
+  document.getElementById("expertMonthlyFee").value = expert.monthly_fee != null ? expert.monthly_fee : "";
   openModal("expertModal");
 }
 
@@ -696,6 +707,9 @@ async function saveExpert() {
   var contractStart = document.getElementById("expertContractStart").value || null;
   var contractEnd = document.getElementById("expertContractEnd").value || null;
   var expertIban = document.getElementById("expertIban").value.trim().replace(/\s/g, "").toUpperCase();
+  var workModel = document.getElementById("expertWorkModel").value || null;
+  var monthlyFeeVal = document.getElementById("expertMonthlyFee").value;
+  var monthlyFee = monthlyFeeVal !== "" ? parseFloat(monthlyFeeVal) : null;
 
   if (!name || !email || !specialty) {
     showToast("Ad, e-posta ve uzmanlık alanı zorunludur.");
@@ -713,6 +727,8 @@ async function saveExpert() {
       contract_start: contractStart,
       contract_end: contractEnd,
       iban: expertIban || null,
+      work_model: workModel,
+      monthly_fee: monthlyFee,
       updated_at: new Date().toISOString()
     }).eq("id", editingId);
 
@@ -739,7 +755,9 @@ async function saveExpert() {
         specialty: specialty,
         areas_of_expertise: areas || null,
         phone: phone,
-        client_capacity: clientCapacity
+        client_capacity: clientCapacity,
+        work_model: workModel,
+        monthly_fee: monthlyFee
       })
     });
     var data = await res.json();
@@ -2393,6 +2411,7 @@ renderAdminView = async function() {
       '<button class="tab-btn" onclick="switchAdminTab(\'announcements\',this)">Duyurular</button>' +
       '<button class="tab-btn" onclick="switchAdminTab(\'loginlogs\',this)">Giri\u015f Loglar\u0131</button>' +
       '<button class="tab-btn" onclick="switchAdminTab(\'calendar\',this)">Takvim</button>' +
+      '<button class="tab-btn" onclick="switchAdminTab(\'payments\',this)">&Ouml;demeler</button>' +
     '</div>' +
     '<div id="adminTabContent"></div>';
 
@@ -2411,6 +2430,7 @@ switchAdminTab = function(tab, btn) {
   else if (tab === "announcements") renderAdminAnnouncementsTab();
   else if (tab === "loginlogs") renderAdminLoginLogsTab();
   else if (tab === "calendar") renderAdminCalendarTab();
+  else if (tab === "payments") renderAdminPaymentsTab();
   else renderAdminNotesTab();
 };
 
@@ -2673,8 +2693,16 @@ renderExpertView = async function() {
   }
 
   html += '</div>';
+
+  // Payment Calendar Section
+  html += '<div style="margin-top:var(--space-8);">' +
+    '<h3 class="section-title">\u00D6deme Takvimim</h3>' +
+    '<div id="expertPaymentsContainer"></div>' +
+  '</div>';
+
   html += '<div id="clientDetailView" class="detail-view"></div>';
   main.innerHTML = html;
+  renderExpertPaymentsSection();
 };
 
 // ==================== ENHANCED CLIENT VIEW (Tabbed Self-Service Portal) ====================
@@ -3330,4 +3358,346 @@ function exportLoginLogsCSV() {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
   showToast('CSV dosyası indiriliyor...');
+}
+
+// ==================== WORK MODEL AUTO-FEE ====================
+document.addEventListener('DOMContentLoaded', function() {
+  var wmSel = document.getElementById('expertWorkModel');
+  if (wmSel) {
+    wmSel.addEventListener('change', function() {
+      var feeInput = document.getElementById('expertMonthlyFee');
+      if (this.value === 'contract') feeInput.value = '4380';
+      else if (this.value === 'commission') feeInput.value = '1590';
+      else feeInput.value = '';
+    });
+  }
+});
+
+// ==================== PAYMENT SCHEDULE HELPERS ====================
+function getFirstBusinessDayOfMonth(year, month) {
+  // First day of month
+  var d = new Date(year, month, 1);
+  // Move to first weekday (Mon-Fri)
+  while (d.getDay() === 0 || d.getDay() === 6) {
+    d.setDate(d.getDate() + 1);
+  }
+  return d;
+}
+
+function generatePaymentSchedule(contractStart, contractEnd, amount) {
+  var payments = [];
+  if (!contractStart || !contractEnd || !amount) return payments;
+  var start = new Date(contractStart);
+  var end = new Date(contractEnd);
+  // Start from the month after contract start (or same month if start is 1st)
+  var curYear = start.getFullYear();
+  var curMonth = start.getMonth();
+  // If contract starts after the 1st, first payment is next month
+  if (start.getDate() > 1) {
+    curMonth++;
+    if (curMonth > 11) { curMonth = 0; curYear++; }
+  }
+  while (true) {
+    var dueDate = getFirstBusinessDayOfMonth(curYear, curMonth);
+    if (dueDate > end) break;
+    if (dueDate >= start || (curYear === start.getFullYear() && curMonth === start.getMonth())) {
+      var label = dueDate.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
+      label = label.charAt(0).toUpperCase() + label.slice(1);
+      payments.push({
+        period_label: label,
+        due_date: dueDate.toISOString().split('T')[0],
+        amount: amount
+      });
+    }
+    curMonth++;
+    if (curMonth > 11) { curMonth = 0; curYear++; }
+  }
+  return payments;
+}
+
+// ==================== ADMIN PAYMENTS TAB ====================
+var _paymentsExpertFilter = '';
+
+async function renderAdminPaymentsTab() {
+  var container = document.getElementById('adminTabContent');
+  container.innerHTML = '<div class="empty-state"><div class="loading-spinner"></div><p>Yükleniyor...</p></div>';
+
+  var d = window._adminData;
+  var experts = (d && d.experts) || [];
+
+  var html =
+    '<div class="page-header">' +
+      '<h2 class="section-title">\u00D6deme Y\u00F6netimi</h2>' +
+    '</div>';
+
+  // Filter by expert
+  html += '<div class="filter-bar" style="margin-bottom:var(--space-4);display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap;">';
+  html += '<select id="paymentExpertFilter" class="form-input" style="max-width:300px;" onchange="filterPaymentsTab()">';
+  html += '<option value="">T\u00FCm Uzmanlar</option>';
+  for (var i = 0; i < experts.length; i++) {
+    var sel = _paymentsExpertFilter === experts[i].id ? ' selected' : '';
+    html += '<option value="' + experts[i].id + '"' + sel + '>' + esc(experts[i].full_name) + '</option>';
+  }
+  html += '</select>';
+  html += '<button class="btn btn-primary btn-sm" onclick="openGeneratePayments()">\u00D6deme Takvimi Olu\u015Ftur</button>';
+  html += '</div>';
+
+  // Fetch payments
+  var query = sb.from('expert_payments').select('*').order('due_date', { ascending: true });
+  if (_paymentsExpertFilter) {
+    query = query.eq('expert_id', _paymentsExpertFilter);
+  }
+  var payRes = await query;
+  var payments = payRes.data || [];
+
+  // Expert name map
+  var expertMap = {};
+  experts.forEach(function(e) { expertMap[e.id] = e; });
+
+  if (payments.length === 0) {
+    html += '<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>' +
+      '<h3>Hen\u00FCz \u00F6deme kayd\u0131 yok</h3>' +
+      '<p>\"\u00D6deme Takvimi Olu\u015Ftur\" butonu ile uzmanlar i\u00E7in \u00F6deme plan\u0131 olu\u015Fturabilirsiniz.</p></div>';
+  } else {
+    // Summary stats
+    var totalPending = 0, totalPaid = 0, pendingAmount = 0, paidAmount = 0;
+    payments.forEach(function(p) {
+      if (p.status === 'paid') { totalPaid++; paidAmount += parseFloat(p.amount); }
+      else { totalPending++; pendingAmount += parseFloat(p.amount); }
+    });
+    html += '<div class="stats-grid" style="margin-bottom:var(--space-4);">' +
+      '<div class="stat-card"><div class="stat-value">' + totalPending + '</div><div class="stat-label">Bekleyen</div></div>' +
+      '<div class="stat-card"><div class="stat-value">' + totalPaid + '</div><div class="stat-label">\u00D6dendi</div></div>' +
+      '<div class="stat-card"><div class="stat-value">' + formatCurrency(pendingAmount) + '</div><div class="stat-label">Bekleyen Tutar</div></div>' +
+      '<div class="stat-card"><div class="stat-value">' + formatCurrency(paidAmount) + '</div><div class="stat-label">\u00D6denen Tutar</div></div>' +
+    '</div>';
+
+    html += '<div class="table-container"><table class="data-table payment-table">';
+    html += '<thead><tr>' +
+      '<th>Uzman</th>' +
+      '<th>D\u00F6nem</th>' +
+      '<th>Vade Tarihi</th>' +
+      '<th>Tutar</th>' +
+      '<th>Durum</th>' +
+      '<th>\u0130\u015Flem</th>' +
+    '</tr></thead><tbody>';
+
+    var today = new Date().toISOString().split('T')[0];
+    for (var j = 0; j < payments.length; j++) {
+      var p = payments[j];
+      var exp = expertMap[p.expert_id];
+      var expName = exp ? exp.full_name : 'Bilinmeyen';
+      var isOverdue = p.status === 'pending' && p.due_date < today;
+      var rowClass = p.status === 'paid' ? 'payment-paid' : (isOverdue ? 'payment-overdue' : 'payment-pending');
+      var statusText = p.status === 'paid' ? '\u00D6dendi' : (isOverdue ? 'Gecikmi\u015F' : 'Bekliyor');
+      var statusBadge = p.status === 'paid'
+        ? '<span class="badge badge-success">\u00D6dendi</span>'
+        : (isOverdue ? '<span class="badge badge-danger">Gecikmi\u015F</span>' : '<span class="badge badge-warning">Bekliyor</span>');
+      var dueDateFormatted = new Date(p.due_date + 'T00:00:00').toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+
+      html += '<tr class="' + rowClass + '">' +
+        '<td data-label="Uzman">' + esc(expName) + '</td>' +
+        '<td data-label="D\u00F6nem">' + esc(p.period_label) + '</td>' +
+        '<td data-label="Vade">' + dueDateFormatted + '</td>' +
+        '<td data-label="Tutar">' + formatCurrency(parseFloat(p.amount)) + '</td>' +
+        '<td data-label="Durum">' + statusBadge + '</td>' +
+        '<td data-label="\u0130\u015Flem">';
+
+      if (p.status === 'pending') {
+        html += '<button class="btn btn-primary btn-sm" onclick="markPaymentPaid(\'' + p.id + '\')">' +
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg> \u00D6dendi \u0130\u015Faretle</button>';
+      } else {
+        var paidDate = p.paid_at ? new Date(p.paid_at).toLocaleDateString('tr-TR') : '-';
+        html += '<span style="font-size:var(--text-xs);color:var(--color-text-faint);">' + paidDate + '</span>';
+      }
+      html += '</td></tr>';
+    }
+    html += '</tbody></table></div>';
+  }
+
+  container.innerHTML = html;
+}
+
+function formatCurrency(val) {
+  return val.toLocaleString('tr-TR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + ' \u20BA';
+}
+
+function filterPaymentsTab() {
+  _paymentsExpertFilter = document.getElementById('paymentExpertFilter').value;
+  renderAdminPaymentsTab();
+}
+
+async function markPaymentPaid(paymentId) {
+  var upd = await sb.from('expert_payments').update({
+    status: 'paid',
+    paid_at: new Date().toISOString(),
+    paid_by: currentProfile.id,
+    updated_at: new Date().toISOString()
+  }).eq('id', paymentId);
+
+  if (upd.error) {
+    showToast('Hata: ' + upd.error.message);
+    return;
+  }
+  showToast('\u00D6deme \u00F6dendi olarak i\u015Faretlendi');
+  renderAdminPaymentsTab();
+}
+
+// Generate payment schedule modal flow
+async function openGeneratePayments() {
+  var d = window._adminData;
+  var experts = (d && d.experts) || [];
+  var eligibleExperts = experts.filter(function(e) {
+    return e.contract_start && e.contract_end && e.work_model && e.monthly_fee;
+  });
+
+  if (eligibleExperts.length === 0) {
+    showToast('\u00D6deme takvimi olu\u015Fturulacak uygun uzman bulunamad\u0131. Uzmanlar\u0131n s\u00F6zle\u015Fme tarihleri, \u00E7al\u0131\u015Fma modeli ve ayl\u0131k \u00FCcret bilgilerini doldurunuz.');
+    return;
+  }
+
+  // Build confirm modal
+  var html = '<div style="max-height:400px;overflow-y:auto;">';
+  html += '<p style="margin-bottom:var(--space-3);font-size:var(--text-sm);color:var(--color-text-faint);">A\u015Fa\u011F\u0131daki uzmanlar i\u00E7in s\u00F6zle\u015Fme tarihlerine g\u00F6re \u00F6deme takvimi olu\u015Fturulacakt\u0131r. Mevcut \u00F6demeleri olan uzmanlar\u0131n takvimleri tekrar olu\u015Fturulmaz.</p>';
+  html += '<table class="data-table" style="font-size:var(--text-sm);"><thead><tr><th>Uzman</th><th>Model</th><th>Ayl\u0131k</th><th>S\u00F6zle\u015Fme</th></tr></thead><tbody>';
+  for (var i = 0; i < eligibleExperts.length; i++) {
+    var e = eligibleExperts[i];
+    var modelLabel = e.work_model === 'contract' ? 'S\u00F6zle\u015Fmeli' : 'Komisyonlu';
+    html += '<tr><td>' + esc(e.full_name) + '</td><td>' + modelLabel + '</td><td>' + formatCurrency(parseFloat(e.monthly_fee)) + '</td>' +
+      '<td>' + e.contract_start + ' / ' + e.contract_end + '</td></tr>';
+  }
+  html += '</tbody></table></div>';
+
+  document.getElementById('confirmMessage').innerHTML = html;
+  document.getElementById('confirmOkBtn').onclick = function() {
+    closeModal('confirmModal');
+    executeGeneratePayments(eligibleExperts);
+  };
+  openModal('confirmModal');
+}
+
+async function executeGeneratePayments(experts) {
+  var created = 0;
+  for (var i = 0; i < experts.length; i++) {
+    var e = experts[i];
+    // Check if payments already exist for this expert
+    var existRes = await sb.from('expert_payments').select('id').eq('expert_id', e.id).limit(1);
+    if (existRes.data && existRes.data.length > 0) continue; // Skip
+
+    var schedule = generatePaymentSchedule(e.contract_start, e.contract_end, e.monthly_fee);
+    for (var j = 0; j < schedule.length; j++) {
+      var pmt = schedule[j];
+      await sb.from('expert_payments').insert({
+        expert_id: e.id,
+        period_label: pmt.period_label,
+        due_date: pmt.due_date,
+        amount: pmt.amount,
+        status: 'pending'
+      });
+      created++;
+    }
+  }
+  showToast(created + ' \u00F6deme kayd\u0131 olu\u015Fturuldu');
+  renderAdminPaymentsTab();
+}
+
+// ==================== EXPERT PAYMENT CALENDAR VIEW ====================
+var _expertPaymentsCache = [];
+
+async function renderExpertPaymentsSection() {
+  var container = document.getElementById('expertPaymentsContainer');
+  if (!container) return;
+  container.innerHTML = '<div class="loading-spinner" style="margin:var(--space-4) auto;"></div>';
+
+  var payRes = await sb.from('expert_payments').select('*').eq('expert_id', currentProfile.id).order('due_date', { ascending: true });
+  var payments = payRes.data || [];
+  _expertPaymentsCache = payments;
+
+  if (payments.length === 0) {
+    container.innerHTML = '<div class="empty-state" style="padding:var(--space-6);">' +
+      '<p style="color:var(--color-text-faint);">Hen\u00FCz \u00F6deme takvimi olu\u015Fturulmam\u0131\u015F.</p></div>';
+    return;
+  }
+
+  var html = '';
+  // Company IBAN info
+  html += '<div class="payment-company-info">' +
+    '<div class="payment-company-title">' +
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>' +
+      ' \u00D6deme Bilgileri' +
+    '</div>' +
+    '<div class="payment-company-detail">' +
+      '<strong>Firma:</strong> SYNAPSE LYNK DANI\u015EMANLIK VE E\u011E\u0130T\u0130M H\u0130ZMETLER\u0130 L\u0130M\u0130TED \u015E\u0130RKET\u0130' +
+    '</div>' +
+    '<div class="payment-company-detail">' +
+      '<strong>IBAN:</strong> <span class="payment-iban">TR29 0001 2001 6620 0010 1011 89</span>' +
+      ' <button class="btn btn-ghost btn-sm" onclick="copyCompanyIban()" title="Kopyala" style="padding:2px 6px;">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>' +
+    '</div>' +
+    '<div class="payment-company-hint">Ayl\u0131k hizmet bedelinizi yukar\u0131daki IBAN\'a havale/EFT ile g\u00F6nderebilirsiniz.</div>' +
+  '</div>';
+
+  // Stats
+  var totalPending = 0, totalPaid = 0, nextPayment = null;
+  var today = new Date().toISOString().split('T')[0];
+  payments.forEach(function(p) {
+    if (p.status === 'paid') totalPaid++;
+    else {
+      totalPending++;
+      if (!nextPayment && p.due_date >= today) nextPayment = p;
+    }
+  });
+
+  html += '<div class="stats-grid" style="margin-bottom:var(--space-4);">' +
+    '<div class="stat-card"><div class="stat-value">' + totalPaid + '/' + payments.length + '</div><div class="stat-label">\u00D6denen / Toplam</div></div>';
+  if (nextPayment) {
+    var nextDate = new Date(nextPayment.due_date + 'T00:00:00').toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' });
+    html += '<div class="stat-card"><div class="stat-value">' + formatCurrency(parseFloat(nextPayment.amount)) + '</div><div class="stat-label">Sonraki \u00D6deme (' + nextDate + ')</div></div>';
+  }
+  html += '</div>';
+
+  // Payment list
+  html += '<div class="payment-list">';
+  for (var k = 0; k < payments.length; k++) {
+    var p = payments[k];
+    var isOverdue = p.status === 'pending' && p.due_date < today;
+    var statusClass = p.status === 'paid' ? 'paid' : (isOverdue ? 'overdue' : 'pending');
+    var statusLabel = p.status === 'paid' ? '\u00D6dendi' : (isOverdue ? 'Gecikmi\u015F' : 'Bekliyor');
+    var iconSvg = p.status === 'paid'
+      ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>'
+      : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>';
+    var dueDateStr = new Date(p.due_date + 'T00:00:00').toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+
+    html += '<div class="payment-item payment-item-' + statusClass + '">' +
+      '<div class="payment-item-icon">' + iconSvg + '</div>' +
+      '<div class="payment-item-info">' +
+        '<div class="payment-item-period">' + esc(p.period_label) + '</div>' +
+        '<div class="payment-item-date">' + dueDateStr + '</div>' +
+      '</div>' +
+      '<div class="payment-item-right">' +
+        '<div class="payment-item-amount">' + formatCurrency(parseFloat(p.amount)) + '</div>' +
+        '<div class="payment-item-status payment-status-' + statusClass + '">' + statusLabel + '</div>' +
+      '</div>' +
+    '</div>';
+  }
+  html += '</div>';
+
+  container.innerHTML = html;
+}
+
+function copyCompanyIban() {
+  var ibanText = 'TR2900012001662000101011 89';
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(ibanText).then(function() {
+      showToast('IBAN kopyaland\u0131');
+    });
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = ibanText;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast('IBAN kopyaland\u0131');
+  }
 }
