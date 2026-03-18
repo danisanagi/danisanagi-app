@@ -3389,26 +3389,19 @@ function generatePaymentSchedule(contractStart, contractEnd, amount) {
   if (!contractStart || !contractEnd || !amount) return payments;
   var start = new Date(contractStart);
   var end = new Date(contractEnd);
-  // Start from the month after contract start (or same month if start is 1st)
+  // Start from the contract start month (ilk ödeme sözleşme başlangıç ayı)
   var curYear = start.getFullYear();
   var curMonth = start.getMonth();
-  // If contract starts after the 1st, first payment is next month
-  if (start.getDate() > 1) {
-    curMonth++;
-    if (curMonth > 11) { curMonth = 0; curYear++; }
-  }
   while (true) {
     var dueDate = getFirstBusinessDayOfMonth(curYear, curMonth);
     if (dueDate > end) break;
-    if (dueDate >= start || (curYear === start.getFullYear() && curMonth === start.getMonth())) {
-      var label = dueDate.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
-      label = label.charAt(0).toUpperCase() + label.slice(1);
-      payments.push({
-        period_label: label,
-        due_date: dueDate.toISOString().split('T')[0],
-        amount: amount
-      });
-    }
+    var label = dueDate.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
+    label = label.charAt(0).toUpperCase() + label.slice(1);
+    payments.push({
+      period_label: label,
+      due_date: dueDate.toISOString().split('T')[0],
+      amount: amount
+    });
     curMonth++;
     if (curMonth > 11) { curMonth = 0; curYear++; }
   }
