@@ -54,6 +54,18 @@ async function checkSession() {
 }
 
 // ==================== LOGIN / LOGOUT ====================
+// ==================== LOGIN LOG SYSTEM ====================
+async function logLoginEvent(userId, eventType) {
+  try {
+    await sb.from("login_logs").insert({
+      user_id: userId,
+      event_type: eventType,
+      timestamp: new Date().toISOString(),
+      user_agent: navigator.userAgent || null
+    });
+  } catch (e) { /* silent fail — log should not block UX */ }
+}
+
 async function handleLogin() {
   var email = document.getElementById("loginEmail").value.trim();
   var password = document.getElementById("loginPassword").value.trim();
@@ -78,6 +90,10 @@ async function handleLogin() {
     }
     currentUser = result.data.user;
     await loadProfile();
+    // Log login event for experts
+    if (currentProfile && currentProfile.role === "expert") {
+      await logLoginEvent(currentUser.id, "login");
+    }
     showApp();
   } catch (e) {
     errEl.textContent = "Bağlantı hatası: " + e.message;
@@ -86,6 +102,10 @@ async function handleLogin() {
 }
 
 async function handleLogout() {
+  // Log logout event for experts before signing out
+  if (currentProfile && currentProfile.role === "expert" && currentUser) {
+    await logLoginEvent(currentUser.id, "logout");
+  }
   if (sb) await sb.auth.signOut();
   currentUser = null;
   currentProfile = null;
@@ -94,6 +114,31 @@ async function handleLogout() {
   document.getElementById("loginPassword").value = "";
   document.getElementById("loginError").style.display = "none";
 }
+
+// Log logout on page close/navigate away (for experts)
+window.addEventListener("beforeunload", function() {
+  if (currentProfile && currentProfile.role === "expert" && currentUser && sb) {
+    var url = sb.supabaseUrl + "/rest/v1/login_logs";
+    var token = sb.supabaseKey;
+    try {
+      var session = JSON.parse(localStorage.getItem("sb-" + sb.supabaseUrl.split("//")[1].split(".")[0] + "-auth-token") || "{}");
+      var accessToken = session.access_token || token;
+      // Use sync XHR as last resort for page close (sendBeacon can't set auth headers)
+      var xhr = new XMLHttpRequest();
+      xhr.open("POST", url, false); // sync
+      xhr.setRequestHeader("Content-Type", "application/json");
+      xhr.setRequestHeader("apikey", token);
+      xhr.setRequestHeader("Authorization", "Bearer " + accessToken);
+      xhr.setRequestHeader("Prefer", "return=minimal");
+      xhr.send(JSON.stringify({
+        user_id: currentUser.id,
+        event_type: "logout",
+        timestamp: new Date().toISOString(),
+        user_agent: navigator.userAgent || null
+      }));
+    } catch(e) { /* silent */ }
+  }
+});
 
 async function loadProfile() {
   var result = await sb.from("profiles").select("*").eq("id", currentUser.id).single();
@@ -2336,6 +2381,7 @@ renderAdminView = async function() {
       '<button class="tab-btn" onclick="switchAdminTab(\'messages\',this)">Mesajlar</button>' +
       '<button class="tab-btn" onclick="switchAdminTab(\'notes\',this)">Notlar</button>' +
       '<button class="tab-btn" onclick="switchAdminTab(\'announcements\',this)">Duyurular</button>' +
+      '<button class="tab-btn" onclick="switchAdminTab(\'loginlogs\',this)">Giri\u015f Loglar\u0131</button>' +
       '<button class="tab-btn" onclick="switchAdminTab(\'calendar\',this)">Takvim</button>' +
     '</div>' +
     '<div id="adminTabContent"></div>';
@@ -2353,6 +2399,7 @@ switchAdminTab = function(tab, btn) {
   else if (tab === "clients") renderAdminClientsTab();
   else if (tab === "messages") renderAdminMessagesTab();
   else if (tab === "announcements") renderAdminAnnouncementsTab();
+  else if (tab === "loginlogs") renderAdminLoginLogsTab();
   else if (tab === "calendar") renderAdminCalendarTab();
   else renderAdminNotesTab();
 };
@@ -3046,4 +3093,221 @@ async function deleteAnnouncement(id) {
 
   showToast("Duyuru silindi");
   renderAdminAnnouncementsTab();
+}
+
+// ==================== ADMIN LOGIN LOGS TAB ====================
+function formatToGMT3(isoString) {
+  var d = new Date(isoString);
+  // Convert to GMT+3
+  var gmt3 = new Date(d.getTime() + (3 * 60 * 60 * 1000));
+  var day = String(gmt3.getUTCDate()).padStart(2, '0');
+  var month = String(gmt3.getUTCMonth() + 1).padStart(2, '0');
+  var year = gmt3.getUTCFullYear();
+  var hours = String(gmt3.getUTCHours()).padStart(2, '0');
+  var minutes = String(gmt3.getUTCMinutes()).padStart(2, '0');
+  var seconds = String(gmt3.getUTCSeconds()).padStart(2, '0');
+  return day + '.' + month + '.' + year + ' ' + hours + ':' + minutes + ':' + seconds;
+}
+
+var _loginLogsCache = null;
+var _loginLogsFilters = { expertId: '', dateFrom: '', dateTo: '' };
+
+async function renderAdminLoginLogsTab() {
+  var container = document.getElementById("adminTabContent");
+  container.innerHTML = '<div class="empty-state"><div class="loading-spinner"></div><p>Yükleniyor...</p></div>';
+
+  var d = window._adminData;
+  var experts = (d && d.experts) || [];
+
+  // Fetch all login logs
+  var query = sb.from("login_logs").select("*").order("timestamp", { ascending: false }).limit(5000);
+  var res = await query;
+  _loginLogsCache = res.data || [];
+
+  // Build expert lookup
+  var expertMap = {};
+  experts.forEach(function(e) { expertMap[e.id] = e.full_name; });
+
+  renderLoginLogsContent(experts, expertMap);
+}
+
+function renderLoginLogsContent(experts, expertMap) {
+  var container = document.getElementById("adminTabContent");
+  var logs = filterLoginLogs(_loginLogsCache, expertMap);
+
+  var html =
+    '<div class="page-header">' +
+      '<h2 class="section-title">Giri\u015f / \u00c7\u0131k\u0131\u015f Loglar\u0131</h2>' +
+      '<p style="color:var(--text-secondary);font-size:0.92rem;margin-top:4px;">Uzmanlar\u0131n panele giri\u015f ve \u00e7\u0131k\u0131\u015f saatleri (GMT+3)</p>' +
+    '</div>' +
+    '<div class="login-logs-filters">' +
+      '<div class="filter-row">' +
+        '<div class="filter-group">' +
+          '<label>Uzman</label>' +
+          '<select id="logExpertFilter" onchange="applyLoginLogFilter()">' +
+            '<option value="">T\u00fcm Uzmanlar</option>';
+
+  experts.sort(function(a, b) { return a.full_name.localeCompare(b.full_name, 'tr'); });
+  experts.forEach(function(e) {
+    var sel = _loginLogsFilters.expertId === e.id ? ' selected' : '';
+    html += '<option value="' + e.id + '"' + sel + '>' + e.full_name + '</option>';
+  });
+
+  html +=
+          '</select>' +
+        '</div>' +
+        '<div class="filter-group">' +
+          '<label>Ba\u015flang\u0131\u00e7 Tarihi</label>' +
+          '<input type="date" id="logDateFrom" value="' + _loginLogsFilters.dateFrom + '" onchange="applyLoginLogFilter()">' +
+        '</div>' +
+        '<div class="filter-group">' +
+          '<label>Biti\u015f Tarihi</label>' +
+          '<input type="date" id="logDateTo" value="' + _loginLogsFilters.dateTo + '" onchange="applyLoginLogFilter()">' +
+        '</div>' +
+        '<div class="filter-group filter-actions">' +
+          '<button class="btn btn-sm" onclick="clearLoginLogFilters()" style="margin-top:22px;">Temizle</button>' +
+          '<button class="btn btn-primary btn-sm" onclick="exportLoginLogsCSV()" style="margin-top:22px;">\u2913 CSV \u0130ndir</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+
+  html += '<div class="login-logs-summary">' +
+    '<span class="log-count">' + logs.length + ' kay\u0131t</span>' +
+  '</div>';
+
+  if (logs.length === 0) {
+    html += '<div class="empty-state"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><h3>Kay\u0131t bulunamad\u0131</h3><p>Se\u00e7ilen filtrelere uygun giri\u015f/\u00e7\u0131k\u0131\u015f kayd\u0131 yok.</p></div>';
+  } else {
+    html += '<div class="table-responsive"><table class="login-logs-table">' +
+      '<thead><tr>' +
+        '<th>Uzman</th>' +
+        '<th>\u0130\u015flem</th>' +
+        '<th>Tarih / Saat (GMT+3)</th>' +
+        '<th>IP Adresi</th>' +
+        '<th>Taray\u0131c\u0131</th>' +
+      '</tr></thead><tbody>';
+
+    logs.forEach(function(log) {
+      var expertName = expertMap[log.user_id] || 'Bilinmeyen';
+      var eventLabel = log.event_type === 'login'
+        ? '<span class="log-badge log-login">Giri\u015f</span>'
+        : '<span class="log-badge log-logout">\u00c7\u0131k\u0131\u015f</span>';
+      var timeStr = formatToGMT3(log.timestamp);
+      var ip = log.ip_address || '-';
+      var ua = log.user_agent ? shortenUA(log.user_agent) : '-';
+
+      html += '<tr>' +
+        '<td class="log-expert-name">' + expertName + '</td>' +
+        '<td>' + eventLabel + '</td>' +
+        '<td class="log-time">' + timeStr + '</td>' +
+        '<td class="log-ip">' + ip + '</td>' +
+        '<td class="log-ua" title="' + (log.user_agent || '') + '">' + ua + '</td>' +
+      '</tr>';
+    });
+
+    html += '</tbody></table></div>';
+  }
+
+  container.innerHTML = html;
+}
+
+function shortenUA(ua) {
+  // Extract browser name from user agent
+  if (ua.indexOf('Chrome') > -1 && ua.indexOf('Edg') > -1) return 'Edge';
+  if (ua.indexOf('Chrome') > -1 && ua.indexOf('OPR') > -1) return 'Opera';
+  if (ua.indexOf('Chrome') > -1) return 'Chrome';
+  if (ua.indexOf('Firefox') > -1) return 'Firefox';
+  if (ua.indexOf('Safari') > -1) return 'Safari';
+  if (ua.indexOf('MSIE') > -1 || ua.indexOf('Trident') > -1) return 'IE';
+  return ua.substring(0, 30) + '...';
+}
+
+function filterLoginLogs(allLogs, expertMap) {
+  return allLogs.filter(function(log) {
+    // Only show expert logs
+    if (!expertMap[log.user_id]) return false;
+
+    if (_loginLogsFilters.expertId && log.user_id !== _loginLogsFilters.expertId) return false;
+
+    if (_loginLogsFilters.dateFrom) {
+      var from = new Date(_loginLogsFilters.dateFrom);
+      from.setHours(0, 0, 0, 0);
+      var logDate = new Date(log.timestamp);
+      // Adjust logDate to GMT+3 for comparison
+      var logGMT3 = new Date(logDate.getTime() + (3 * 60 * 60 * 1000));
+      var logDateOnly = new Date(logGMT3.getUTCFullYear(), logGMT3.getUTCMonth(), logGMT3.getUTCDate());
+      if (logDateOnly < from) return false;
+    }
+
+    if (_loginLogsFilters.dateTo) {
+      var to = new Date(_loginLogsFilters.dateTo);
+      to.setHours(23, 59, 59, 999);
+      var logDate2 = new Date(log.timestamp);
+      var logGMT3b = new Date(logDate2.getTime() + (3 * 60 * 60 * 1000));
+      var logDateOnly2 = new Date(logGMT3b.getUTCFullYear(), logGMT3b.getUTCMonth(), logGMT3b.getUTCDate());
+      if (logDateOnly2 > to) return false;
+    }
+
+    return true;
+  });
+}
+
+function applyLoginLogFilter() {
+  _loginLogsFilters.expertId = document.getElementById('logExpertFilter').value;
+  _loginLogsFilters.dateFrom = document.getElementById('logDateFrom').value;
+  _loginLogsFilters.dateTo = document.getElementById('logDateTo').value;
+
+  var d = window._adminData;
+  var experts = (d && d.experts) || [];
+  var expertMap = {};
+  experts.forEach(function(e) { expertMap[e.id] = e.full_name; });
+  renderLoginLogsContent(experts, expertMap);
+}
+
+function clearLoginLogFilters() {
+  _loginLogsFilters = { expertId: '', dateFrom: '', dateTo: '' };
+  document.getElementById('logExpertFilter').value = '';
+  document.getElementById('logDateFrom').value = '';
+  document.getElementById('logDateTo').value = '';
+  applyLoginLogFilter();
+}
+
+function exportLoginLogsCSV() {
+  var d = window._adminData;
+  var experts = (d && d.experts) || [];
+  var expertMap = {};
+  experts.forEach(function(e) { expertMap[e.id] = e.full_name; });
+
+  var logs = filterLoginLogs(_loginLogsCache || [], expertMap);
+
+  if (logs.length === 0) {
+    showToast('Dışa aktarılacak kayıt bulunamadı');
+    return;
+  }
+
+  var csvRows = ['Uzman,İşlem,Tarih/Saat (GMT+3),IP Adresi,Tarayıcı,Oturum ID'];
+
+  logs.forEach(function(log) {
+    var name = (expertMap[log.user_id] || 'Bilinmeyen').replace(/,/g, ' ');
+    var event = log.event_type === 'login' ? 'Giriş' : 'Çıkış';
+    var time = formatToGMT3(log.timestamp);
+    var ip = (log.ip_address || '-').replace(/,/g, ' ');
+    var ua = (log.user_agent || '-').replace(/,/g, ' ').replace(/"/g, "'");
+    var sid = (log.session_id || '-').replace(/,/g, ' ');
+    csvRows.push('"' + name + '","' + event + '","' + time + '","' + ip + '","' + ua + '","' + sid + '"');
+  });
+
+  var csvContent = '\uFEFF' + csvRows.join('\n'); // BOM for Excel Turkish char support
+  var blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  var now = new Date();
+  var dateStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+  a.download = 'giris_loglari_' + dateStr + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('CSV dosyası indiriliyor...');
 }
