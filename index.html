@@ -118,6 +118,11 @@
         <input type="date" id="expertContractEnd" class="form-input">
       </div>
     </div>
+    <div class="form-group">
+      <label>IBAN</label>
+      <input type="text" id="expertIban" class="form-input" placeholder="TR00 0000 0000 0000 0000 0000 00" maxlength="32">
+      <span class="form-hint">Seans ücretlerinin yatırılacağı hesap (uzman da kendi panelinden girebilir)</span>
+    </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('expertModal')">İptal</button>
       <button class="btn btn-primary" id="expertSaveBtn" onclick="saveExpert()">Kaydet</button>
@@ -386,6 +391,11 @@
     <div class="form-group">
       <label>Telefon</label>
       <input type="tel" id="myProfilePhone" class="form-input" placeholder="0532 XXX XXXX">
+    </div>
+    <div class="form-group">
+      <label>IBAN</label>
+      <input type="text" id="myProfileIban" class="form-input" placeholder="TR00 0000 0000 0000 0000 0000 00" maxlength="32">
+      <span class="form-hint">Seans ücretlerinizin yatırılacağı hesap</span>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('expertProfileModal')">Vazgeç</button>
