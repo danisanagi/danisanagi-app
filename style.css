@@ -2443,3 +2443,223 @@ textarea.form-input {
     display: none;
   }
 }
+
+/* ==================== PAYMENT SYSTEM ==================== */
+
+/* Admin payment table */
+.payment-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.payment-table th {
+  background: var(--color-surface-alt, #f4f5f7);
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-faint);
+  font-weight: 600;
+}
+.payment-table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--text-sm);
+  vertical-align: middle;
+}
+.payment-table tr.payment-paid td {
+  opacity: 0.65;
+}
+.payment-table tr.payment-overdue td {
+  background: #fff5f5;
+}
+.table-container {
+  overflow-x: auto;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+/* Badges */
+.badge-success {
+  background: #e6f9ed;
+  color: #1a7a3a;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+.badge-warning {
+  background: #fff8e6;
+  color: #9a6700;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+.badge-danger {
+  background: #ffe6e6;
+  color: #c53030;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+/* Expert payment company info box */
+.payment-company-info {
+  background: linear-gradient(135deg, #f0faf9, #e8f4f3);
+  border: 1px solid #c5e3df;
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.payment-company-title {
+  font-weight: 700;
+  font-size: var(--text-base);
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+.payment-company-detail {
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-1);
+  line-height: 1.5;
+}
+.payment-company-detail strong {
+  color: var(--color-text);
+}
+.payment-iban {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--color-primary);
+  background: rgba(48, 114, 109, 0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.payment-company-hint {
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-text-faint);
+}
+
+/* Expert payment list items */
+.payment-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.payment-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: #fff;
+  transition: box-shadow 0.15s;
+}
+.payment-item:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+.payment-item-paid {
+  border-color: #c5e3df;
+  background: #f8fcfb;
+}
+.payment-item-paid .payment-item-icon {
+  color: #1a7a3a;
+}
+.payment-item-overdue {
+  border-color: #f5c6c6;
+  background: #fffafa;
+}
+.payment-item-overdue .payment-item-icon {
+  color: #c53030;
+}
+.payment-item-pending .payment-item-icon {
+  color: #9a6700;
+}
+.payment-item-icon {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--color-surface-alt, #f4f5f7);
+}
+.payment-item-info {
+  flex: 1;
+  min-width: 0;
+}
+.payment-item-period {
+  font-weight: 600;
+  font-size: var(--text-sm);
+  color: var(--color-text);
+}
+.payment-item-date {
+  font-size: var(--text-xs);
+  color: var(--color-text-faint);
+  margin-top: 1px;
+}
+.payment-item-right {
+  text-align: right;
+  flex-shrink: 0;
+}
+.payment-item-amount {
+  font-weight: 700;
+  font-size: var(--text-sm);
+  color: var(--color-text);
+}
+.payment-item-status {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  margin-top: 2px;
+}
+.payment-status-paid {
+  color: #1a7a3a;
+}
+.payment-status-overdue {
+  color: #c53030;
+}
+.payment-status-pending {
+  color: #9a6700;
+}
+
+/* Mobile responsive for payment table */
+@media (max-width: 640px) {
+  .payment-table thead {
+    display: none;
+  }
+  .payment-table tbody tr {
+    display: block;
+    padding: var(--space-3);
+    border-bottom: 1px solid var(--color-border);
+    margin-bottom: var(--space-2);
+  }
+  .payment-table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-1) 0;
+    border-bottom: none;
+    font-size: var(--text-sm);
+  }
+  .payment-table td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: var(--color-text-faint);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+  }
+  .payment-item {
+    padding: var(--space-3);
+  }
+  .payment-company-info {
+    padding: var(--space-3);
+  }
+}
