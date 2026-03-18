@@ -284,6 +284,23 @@
   </div>
 </div>
 
+<!-- Payment Schedule Confirm Modal -->
+<div id="paymentConfirmModal" class="modal-overlay">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <h3 class="modal-title">Ödeme Takvimi Oluştur</h3>
+      <button class="modal-close" onclick="closeModal('paymentConfirmModal')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
+    </div>
+    <div id="paymentConfirmBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('paymentConfirmModal')">Vazgeç</button>
+      <button class="btn btn-primary" id="paymentConfirmOkBtn">Oluştur</button>
+    </div>
+  </div>
+</div>
+
 <!-- Assign Clients Modal -->
 <div id="assignModal" class="modal-overlay">
   <div class="modal">
