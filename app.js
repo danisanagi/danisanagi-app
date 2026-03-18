@@ -55,12 +55,25 @@ async function checkSession() {
 
 // ==================== LOGIN / LOGOUT ====================
 // ==================== LOGIN LOG SYSTEM ====================
+var _cachedIp = null;
+async function getUserIp() {
+  if (_cachedIp) return _cachedIp;
+  try {
+    var r = await fetch('https://api.ipify.org?format=json');
+    var d = await r.json();
+    _cachedIp = d.ip || null;
+    return _cachedIp;
+  } catch (e) { return null; }
+}
+
 async function logLoginEvent(userId, eventType) {
   try {
+    var ip = await getUserIp();
     await sb.from("login_logs").insert({
       user_id: userId,
       event_type: eventType,
       timestamp: new Date().toISOString(),
+      ip_address: ip,
       user_agent: navigator.userAgent || null
     });
   } catch (e) { /* silent fail — log should not block UX */ }
