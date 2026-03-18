@@ -2188,3 +2188,28 @@ textarea.form-input {
     align-items: flex-start;
   }
 }
+
+/* Capacity Badge */
+.capacity-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-left: 8px;
+  vertical-align: middle;
+  line-height: 1;
+}
+.capacity-ok {
+  background: #e6f5ee;
+  color: #1a7a4c;
+}
+.capacity-warning {
+  background: #fff3e0;
+  color: #e65100;
+}
+.capacity-full {
+  background: #fce4ec;
+  color: #c62828;
+}
