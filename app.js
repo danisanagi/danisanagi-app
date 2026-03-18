@@ -2335,6 +2335,7 @@ renderAdminView = async function() {
       '<button class="tab-btn" onclick="switchAdminTab(\'clients\',this)">Danışanlar</button>' +
       '<button class="tab-btn" onclick="switchAdminTab(\'messages\',this)">Mesajlar</button>' +
       '<button class="tab-btn" onclick="switchAdminTab(\'notes\',this)">Notlar</button>' +
+      '<button class="tab-btn" onclick="switchAdminTab(\'announcements\',this)">Duyurular</button>' +
       '<button class="tab-btn" onclick="switchAdminTab(\'calendar\',this)">Takvim</button>' +
     '</div>' +
     '<div id="adminTabContent"></div>';
@@ -2351,6 +2352,7 @@ switchAdminTab = function(tab, btn) {
   else if (tab === "experts") renderAdminExpertsTab();
   else if (tab === "clients") renderAdminClientsTab();
   else if (tab === "messages") renderAdminMessagesTab();
+  else if (tab === "announcements") renderAdminAnnouncementsTab();
   else if (tab === "calendar") renderAdminCalendarTab();
   else renderAdminNotesTab();
 };
@@ -2479,6 +2481,10 @@ renderExpertView = async function() {
     .order("start_time");
   var upcomingSessions = sessionsRes.data || [];
 
+  // Fetch announcements for expert view
+  var annRes = await sb.from("announcements").select("*").order("created_at", { ascending: false }).limit(5);
+  var announcements = annRes.data || [];
+
   var html =
     '<div class="page-header">' +
       '<h2 class="page-title">Danışanlarım</h2>' +
@@ -2488,6 +2494,25 @@ renderExpertView = async function() {
         '<span class="badge badge-online">Çevrimiçi</span>' +
       '</div>' +
     '</div>';
+
+  // Show announcements banner if any
+  if (announcements.length > 0) {
+    html += '<div class="expert-announcements">';
+    html += '<div class="expert-announcements-header">' +
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19.4 14.9C20.2 16.4 21 17 21 17H3s3-2 3-9c0-3.3 2.7-6 6-6 .7 0 1.3.1 1.9.3"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><circle cx="18" cy="8" r="3"/></svg>' +
+      '<span>Duyurular</span>' +
+    '</div>';
+    announcements.forEach(function(a) {
+      var date = new Date(a.created_at);
+      var dateStr = date.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+      html += '<div class="expert-announcement-item">' +
+        '<div class="expert-announcement-title">' + esc(a.title) + '</div>' +
+        '<div class="expert-announcement-date">' + dateStr + '</div>' +
+        '<div class="expert-announcement-content">' + esc(a.content).replace(/\n/g, '<br>') + '</div>' +
+      '</div>';
+    });
+    html += '</div>';
+  }
 
   if (assignments.length === 0) {
     html += '<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><h3>Henüz danışanınız yok</h3><p>Admin tarafından size danışan atandığında burada görünecektir.</p></div>';
@@ -2930,4 +2955,95 @@ async function saveMyProfile() {
   showToast("Profiliniz güncellendi");
   closeModal("expertProfileModal");
   renderExpertView();
+}
+
+// ==================== DUYURU SİSTEMİ (Announcements) ====================
+
+async function renderAdminAnnouncementsTab() {
+  var container = document.getElementById("adminTabContent");
+  container.innerHTML = '<div class="empty-state"><div class="loading-spinner"></div><p>Yükleniyor...</p></div>';
+
+  var res = await sb.from("announcements").select("*").order("created_at", { ascending: false });
+  var announcements = res.data || [];
+
+  var html =
+    '<div class="page-header">' +
+      '<h2 class="section-title">Duyuru Yönetimi</h2>' +
+      '<button class="btn btn-primary" onclick="openAddAnnouncement()">' +
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>' +
+        'Yeni Duyuru</button>' +
+    '</div>';
+
+  if (announcements.length === 0) {
+    html += '<div class="empty-state">' +
+      '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M19.4 14.9C20.2 16.4 21 17 21 17H3s3-2 3-9c0-3.3 2.7-6 6-6 .7 0 1.3.1 1.9.3"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><circle cx="18" cy="8" r="3"/></svg>' +
+      '<h3>Henüz duyuru yok</h3>' +
+      '<p>Yeni bir duyuru ekleyerek tüm uzmanlara bildirim gönderebilirsiniz.</p>' +
+    '</div>';
+  } else {
+    html += '<div class="announcements-list">';
+    announcements.forEach(function(a) {
+      var date = new Date(a.created_at);
+      var dateStr = date.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      html +=
+        '<div class="announcement-card">' +
+          '<div class="announcement-header">' +
+            '<div>' +
+              '<h3 class="announcement-title">' + esc(a.title) + '</h3>' +
+              '<span class="announcement-date">' + dateStr + '</span>' +
+            '</div>' +
+            '<button class="btn btn-ghost btn-sm" onclick="deleteAnnouncement(\'' + a.id + '\')" title="Sil" style="color:var(--color-error);">' +
+              '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>' +
+          '</div>' +
+          '<div class="announcement-content">' + esc(a.content).replace(/\n/g, '<br>') + '</div>' +
+        '</div>';
+    });
+    html += '</div>';
+  }
+
+  container.innerHTML = html;
+}
+
+function openAddAnnouncement() {
+  document.getElementById("announcementTitle").value = "";
+  document.getElementById("announcementContent").value = "";
+  openModal("announcementModal");
+}
+
+async function saveAnnouncement() {
+  var title = document.getElementById("announcementTitle").value.trim();
+  var content = document.getElementById("announcementContent").value.trim();
+
+  if (!title || !content) {
+    showToast("Başlık ve içerik zorunludur.");
+    return;
+  }
+
+  var res = await sb.from("announcements").insert({
+    title: title,
+    content: content,
+    created_by: currentProfile.id
+  });
+
+  if (res.error) {
+    showToast("Hata: " + res.error.message);
+    return;
+  }
+
+  showToast("Duyuru yayınlandı");
+  closeModal("announcementModal");
+  renderAdminAnnouncementsTab();
+}
+
+async function deleteAnnouncement(id) {
+  if (!confirm("Bu duyuruyu silmek istediğinize emin misiniz?")) return;
+
+  var res = await sb.from("announcements").delete().eq("id", id);
+  if (res.error) {
+    showToast("Hata: " + res.error.message);
+    return;
+  }
+
+  showToast("Duyuru silindi");
+  renderAdminAnnouncementsTab();
 }
