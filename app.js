@@ -3568,6 +3568,27 @@ async function openGeneratePayments() {
   }
   html += '</tbody></table></div>';
 
+  // Ensure modal exists (create dynamically if not in HTML)
+  if (!document.getElementById('paymentConfirmModal')) {
+    var modalEl = document.createElement('div');
+    modalEl.id = 'paymentConfirmModal';
+    modalEl.className = 'modal-overlay';
+    modalEl.innerHTML =
+      '<div class="modal modal-wide">' +
+        '<div class="modal-header">' +
+          '<h3 class="modal-title">\u00D6deme Takvimi Olu\u015Ftur</h3>' +
+          '<button class="modal-close" onclick="closeModal(\'paymentConfirmModal\')">' +
+            '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>' +
+          '</button>' +
+        '</div>' +
+        '<div id="paymentConfirmBody"></div>' +
+        '<div class="modal-footer">' +
+          '<button class="btn btn-secondary" onclick="closeModal(\'paymentConfirmModal\')">Vazge\u00E7</button>' +
+          '<button class="btn btn-primary" id="paymentConfirmOkBtn">Olu\u015Ftur</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(modalEl);
+  }
   document.getElementById('paymentConfirmBody').innerHTML = html;
   document.getElementById('paymentConfirmOkBtn').onclick = function() {
     closeModal('paymentConfirmModal');
