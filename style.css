@@ -2289,3 +2289,157 @@ textarea.form-input {
   background: #fce4ec;
   color: #c62828;
 }
+
+/* ==================== LOGIN LOGS TAB ==================== */
+.login-logs-filters {
+  background: #f8fafa;
+  border: 1px solid #e0e8e7;
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+}
+.login-logs-filters .filter-row {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+.login-logs-filters .filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 160px;
+}
+.login-logs-filters .filter-group label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.login-logs-filters .filter-group select,
+.login-logs-filters .filter-group input[type="date"] {
+  padding: 8px 10px;
+  border: 1px solid #d0d9d8;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  background: #fff;
+  color: var(--text-primary);
+}
+.login-logs-filters .filter-actions {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  min-width: auto;
+  align-items: flex-end;
+}
+.login-logs-summary {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.login-logs-summary .log-count {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+.table-responsive {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 12px;
+  border: 1px solid #e0e8e7;
+}
+.login-logs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.login-logs-table thead {
+  background: #f0f5f4;
+}
+.login-logs-table th {
+  padding: 12px 14px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-bottom: 2px solid #d5dfde;
+  white-space: nowrap;
+}
+.login-logs-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid #eef2f1;
+  vertical-align: middle;
+}
+.login-logs-table tbody tr:hover {
+  background: #f5f9f8;
+}
+.login-logs-table .log-expert-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.login-logs-table .log-time {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.86rem;
+  color: #455a64;
+  white-space: nowrap;
+}
+.login-logs-table .log-ip {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.84rem;
+  color: #607d8b;
+}
+.login-logs-table .log-ua {
+  font-size: 0.84rem;
+  color: #78909c;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.log-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.log-badge.log-login {
+  background: #e0f2f1;
+  color: #00695c;
+}
+.log-badge.log-logout {
+  background: #fce4ec;
+  color: #c62828;
+}
+
+/* Mobile responsive for login logs */
+@media (max-width: 768px) {
+  .login-logs-filters .filter-row {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .login-logs-filters .filter-group {
+    min-width: 100%;
+  }
+  .login-logs-filters .filter-actions {
+    flex-direction: row;
+    justify-content: flex-start;
+    margin-top: 4px;
+  }
+  .login-logs-table th,
+  .login-logs-table td {
+    padding: 8px 10px;
+    font-size: 0.82rem;
+  }
+  .login-logs-table .log-ip,
+  .login-logs-table .log-ua {
+    display: none;
+  }
+  .login-logs-table th:nth-child(4),
+  .login-logs-table th:nth-child(5) {
+    display: none;
+  }
+}
