@@ -242,6 +242,11 @@ function renderAdminExpertsTab() {
       var ce = expert.contract_end ? formatSessionDate(expert.contract_end) : '?';
       contractInfo = '<div class="user-card-detail" style="font-size:11px;color:var(--color-text-faint);">Sözleşme: ' + cs + ' – ' + ce + '</div>';
     }
+    var ibanInfo = '';
+    if (expert.iban) {
+      var formattedIban = expert.iban.replace(/(\w{4})/g, '$1 ').trim();
+      ibanInfo = '<div class="user-card-detail" style="font-size:11px;color:var(--color-text-faint);">IBAN: ' + esc(formattedIban) + '</div>';
+    }
     var areasHtml = '';
     if (expert.areas_of_expertise) {
       var areasList = expert.areas_of_expertise.split(',').map(function(a) { return a.trim(); }).filter(function(a) { return a; });
@@ -263,6 +268,7 @@ function renderAdminExpertsTab() {
           '<div class="user-card-detail">' + esc(expert.specialty || "Belirtilmemiş") + ' — ' + clientCount + ' danışan</div>' +
           areasHtml +
           contractInfo +
+          ibanInfo +
         '</div>' +
         '<div class="user-card-actions">' +
           '<button class="btn btn-ghost btn-sm" onclick="openMessaging(\'' + escAttr(expert.id) + '\',\'' + escAttr(expert.full_name) + '\')" title="Mesaj">' +
@@ -646,6 +652,7 @@ function openAddExpert() {
   document.getElementById("expertClientCapacity").value = "";
   document.getElementById("expertContractStart").value = "";
   document.getElementById("expertContractEnd").value = "";
+  document.getElementById("expertIban").value = "";
   document.getElementById("expertPassword").style.display = "";
   document.getElementById("expertPasswordHint").style.display = "";
   document.getElementById("expertEmail").disabled = false;
@@ -668,6 +675,7 @@ function openEditExpert(id) {
   document.getElementById("expertClientCapacity").value = expert.client_capacity != null ? expert.client_capacity : "";
   document.getElementById("expertContractStart").value = expert.contract_start || "";
   document.getElementById("expertContractEnd").value = expert.contract_end || "";
+  document.getElementById("expertIban").value = expert.iban || "";
   openModal("expertModal");
 }
 
@@ -687,6 +695,7 @@ async function saveExpert() {
   var clientCapacity = capacityVal !== "" ? parseInt(capacityVal) : null;
   var contractStart = document.getElementById("expertContractStart").value || null;
   var contractEnd = document.getElementById("expertContractEnd").value || null;
+  var expertIban = document.getElementById("expertIban").value.trim().replace(/\s/g, "").toUpperCase();
 
   if (!name || !email || !specialty) {
     showToast("Ad, e-posta ve uzmanlık alanı zorunludur.");
@@ -703,6 +712,7 @@ async function saveExpert() {
       client_capacity: clientCapacity,
       contract_start: contractStart,
       contract_end: contractEnd,
+      iban: expertIban || null,
       updated_at: new Date().toISOString()
     }).eq("id", editingId);
 
@@ -2969,6 +2979,7 @@ function openMyProfile() {
   document.getElementById("myProfileSpecialty").value = currentProfile.specialty || "";
   document.getElementById("myProfileAreas").value = currentProfile.areas_of_expertise || "";
   document.getElementById("myProfilePhone").value = currentProfile.phone || "";
+  document.getElementById("myProfileIban").value = currentProfile.iban || "";
   openModal("expertProfileModal");
 }
 
@@ -2976,9 +2987,16 @@ async function saveMyProfile() {
   var specialty = document.getElementById("myProfileSpecialty").value.trim();
   var areas = document.getElementById("myProfileAreas").value.trim();
   var phone = document.getElementById("myProfilePhone").value.trim();
+  var iban = document.getElementById("myProfileIban").value.trim().replace(/\s/g, "").toUpperCase();
 
   if (!specialty) {
     showToast("Unvan boş bırakılamaz.");
+    return;
+  }
+
+  // Validate IBAN format if provided
+  if (iban && !/^TR\d{24}$/.test(iban)) {
+    showToast("Geçerli bir TR IBAN giriniz (TR + 24 rakam).");
     return;
   }
 
@@ -2986,6 +3004,7 @@ async function saveMyProfile() {
     specialty: specialty,
     areas_of_expertise: areas || null,
     phone: phone,
+    iban: iban || null,
     updated_at: new Date().toISOString()
   }).eq("id", currentProfile.id);
 
@@ -2998,6 +3017,7 @@ async function saveMyProfile() {
   currentProfile.specialty = specialty;
   currentProfile.areas_of_expertise = areas || null;
   currentProfile.phone = phone;
+  currentProfile.iban = iban || null;
 
   showToast("Profiliniz güncellendi");
   closeModal("expertProfileModal");
