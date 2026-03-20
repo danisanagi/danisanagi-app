@@ -2,15 +2,15 @@
    DanışanAğı — Claymorphism Design System
    Art direction: Warm, tactile, inviting — soft 3D "clay" surfaces
    Palette: Vibrant indigo-violet primary, coral accents, white base
-   Typography: Playfair Display (display) + Inter (body)
+   Typography: Poppins (all text)
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
 
 :root {
   /* Font families */
-  --font-display: 'Playfair Display', Georgia, serif;
-  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-body: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
   /* Type scale */
   --text-xs:   clamp(0.75rem,  0.7rem  + 0.25vw, 0.875rem);
