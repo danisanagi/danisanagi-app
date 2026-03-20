@@ -2567,61 +2567,90 @@ async function renderAdminMessagesTab() {
   container.innerHTML = html;
 }
 
-// ==================== ENHANCED EXPERT VIEW (add messaging + session notes buttons) ====================
+// ==================== ENHANCED EXPERT VIEW (Tabbed Layout) ====================
 var _originalRenderExpertView = renderExpertView;
+var currentExpertTab = 'clients';
+var _expertViewData = {};
+
+function switchExpertTab(tab) {
+  currentExpertTab = tab;
+  document.querySelectorAll('.tab-btn[data-expert-tab]').forEach(function(b) { b.classList.remove('active'); });
+  var activeBtn = document.querySelector('.tab-btn[data-expert-tab="' + tab + '"]');
+  if (activeBtn) activeBtn.classList.add('active');
+  renderExpertTabContent();
+}
+
 renderExpertView = async function() {
   var main = document.getElementById("mainContent");
-  main.innerHTML = '<div class="empty-state"><div class="loading-spinner"></div><p>Yükleniyor...</p></div>';
+  main.innerHTML = '<div class="empty-state"><div class="loading-spinner"></div><p>Y\u00FCkleniyor...</p></div>';
 
-  var assignRes = await sb.from("assignments").select("*, client:client_id(id, full_name, email, phone)").eq("expert_id", currentProfile.id);
-  var assignments = assignRes.data || [];
+  // Fetch all data in parallel
+  var [assignRes, annRes, adminRes, payRes] = await Promise.all([
+    sb.from("assignments").select("*, client:client_id(id, full_name, email, phone)").eq("expert_id", currentProfile.id),
+    sb.from("announcements").select("*").order("created_at", { ascending: false }).limit(10),
+    sb.from("profiles").select("id, full_name").eq("role", "admin").limit(1).maybeSingle(),
+    sb.from("expert_payments").select("*").eq("expert_id", currentProfile.id).order("due_date", { ascending: true })
+  ]);
 
-  var today = new Date().toISOString().split("T")[0];
-  var sessionsRes = await sb.from("scheduled_sessions")
-    .select("*, client:client_id(id, full_name)")
-    .eq("expert_id", currentProfile.id)
-    .gte("session_date", today)
-    .order("session_date")
-    .order("start_time");
-  var upcomingSessions = sessionsRes.data || [];
+  _expertViewData.assignments = assignRes.data || [];
+  _expertViewData.announcements = annRes.data || [];
+  _expertViewData.admin = adminRes.data;
+  _expertViewData.payments = payRes.data || [];
+  window._expertClients = _expertViewData.assignments;
 
-  // Fetch announcements for expert view
-  var annRes = await sb.from("announcements").select("*").order("created_at", { ascending: false }).limit(5);
-  var announcements = annRes.data || [];
+  // Build tab navigation
+  var annCount = _expertViewData.announcements.length;
+  var pendingPayments = _expertViewData.payments.filter(function(p) { return p.status !== 'paid'; }).length;
 
-  var html =
-    '<div class="page-header">' +
-      '<h2 class="page-title">Danışanlarım</h2>' +
-      '<div style="display:flex;align-items:center;gap:var(--space-2);">' +
-        '<button class="btn btn-ghost btn-sm" onclick="openMyProfile()" title="Profilimi Düzenle">' +
-          '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> Profilim</button>' +
-        '<span class="badge badge-online">Çevrimiçi</span>' +
-      '</div>' +
-    '</div>';
+  var html = '<div class="tab-nav" role="tablist">';
+  html += '<button class="tab-btn' + (currentExpertTab === 'clients' ? ' active' : '') + '" data-expert-tab="clients" onclick="switchExpertTab(\'clients\')">' +
+    '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:4px;"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>' +
+    'Dan\u0131\u015Fanlar\u0131m</button>';
+  html += '<button class="tab-btn' + (currentExpertTab === 'announcements' ? ' active' : '') + '" data-expert-tab="announcements" onclick="switchExpertTab(\'announcements\')">' +
+    '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:4px;"><path d="M19.4 14.9C20.2 16.4 21 17 21 17H3s3-2 3-9c0-3.3 2.7-6 6-6 .7 0 1.3.1 1.9.3"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><circle cx="18" cy="8" r="3"/></svg>' +
+    'Duyurular' + (annCount > 0 ? ' <span style="font-size:10px;background:var(--color-secondary);color:#fff;padding:1px 6px;border-radius:99px;margin-left:2px;">' + annCount + '</span>' : '') + '</button>';
+  html += '<button class="tab-btn' + (currentExpertTab === 'payments' ? ' active' : '') + '" data-expert-tab="payments" onclick="switchExpertTab(\'payments\')">' +
+    '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:4px;"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>' +
+    '\u00D6deme Takvimi' + (pendingPayments > 0 ? ' <span style="font-size:10px;background:var(--color-warning);color:#fff;padding:1px 6px;border-radius:99px;margin-left:2px;">' + pendingPayments + '</span>' : '') + '</button>';
+  html += '<button class="tab-btn' + (currentExpertTab === 'profile' ? ' active' : '') + '" data-expert-tab="profile" onclick="switchExpertTab(\'profile\')">' +
+    '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:4px;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>' +
+    'Profilim</button>';
+  html += '</div>';
 
-  // Show announcements banner if any
-  if (announcements.length > 0) {
-    html += '<div class="expert-announcements">';
-    html += '<div class="expert-announcements-header">' +
-      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19.4 14.9C20.2 16.4 21 17 21 17H3s3-2 3-9c0-3.3 2.7-6 6-6 .7 0 1.3.1 1.9.3"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><circle cx="18" cy="8" r="3"/></svg>' +
-      '<span>Duyurular</span>' +
-    '</div>';
-    announcements.forEach(function(a) {
-      var date = new Date(a.created_at);
-      var dateStr = date.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
-      html += '<div class="expert-announcement-item">' +
-        '<div class="expert-announcement-title">' + esc(a.title) + '</div>' +
-        '<div class="expert-announcement-date">' + dateStr + '</div>' +
-        '<div class="expert-announcement-content">' + esc(a.content).replace(/\n/g, '<br>') + '</div>' +
-      '</div>';
-    });
-    html += '</div>';
+  html += '<div id="expertTabContent"></div>';
+  html += '<div id="clientDetailView" class="detail-view"></div>';
+  main.innerHTML = html;
+  renderExpertTabContent();
+};
+
+async function renderExpertTabContent() {
+  var container = document.getElementById('expertTabContent');
+  if (!container) return;
+
+  if (currentExpertTab === 'clients') {
+    await renderExpertClientsTab(container);
+  } else if (currentExpertTab === 'announcements') {
+    renderExpertAnnouncementsTab(container);
+  } else if (currentExpertTab === 'payments') {
+    renderExpertPaymentsTab(container);
+  } else if (currentExpertTab === 'profile') {
+    renderExpertProfileTab(container);
   }
+}
+
+async function renderExpertClientsTab(container) {
+  var assignments = _expertViewData.assignments || [];
+  var admin = _expertViewData.admin;
+  var html = '';
+
+  html += '<div class="page-header" style="margin-bottom:var(--space-4);">' +
+    '<h2 class="page-title">Dan\u0131\u015Fanlar\u0131m</h2>' +
+    '<span class="badge badge-online">\u00C7evrimii\u00E7i</span>' +
+  '</div>';
 
   if (assignments.length === 0) {
-    html += '<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><h3>Henüz danışanınız yok</h3><p>Admin tarafından size danışan atandığında burada görünecektir.</p></div>';
+    html += '<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><h3>Hen\u00FCz dan\u0131\u015Fan\u0131n\u0131z yok</h3><p>Admin taraf\u0131ndan size dan\u0131\u015Fan atand\u0131\u011F\u0131nda burada g\u00F6r\u00FCnecektir.</p></div>';
   } else {
-    window._expertClients = assignments;
     html += '<div class="user-list" id="expertClientList">';
     for (var i = 0; i < assignments.length; i++) {
       var a = assignments[i];
@@ -2640,10 +2669,10 @@ renderExpertView = async function() {
           '<div class="user-card-actions">' +
             '<button class="btn btn-ghost btn-sm" onclick="openMessaging(\'' + escAttr(client.id) + '\',\'' + escAttr(client.full_name) + '\')" title="Mesaj">' +
               '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' + unreadBadge + '</button>' +
-            '<button class="btn btn-ghost btn-sm" onclick="showSessionNotes(\'' + escAttr(client.id) + '\',\'' + escAttr(client.full_name) + '\')" title="Seans Notları">' +
+            '<button class="btn btn-ghost btn-sm" onclick="showSessionNotes(\'' + escAttr(client.id) + '\',\'' + escAttr(client.full_name) + '\')" title="Seans Notlar\u0131">' +
               '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></button>' +
             '<button class="btn btn-primary btn-sm" onclick="startVideoCall(\'' + escAttr(client.id) + '\',\'' + escAttr(client.full_name) + '\')">' +
-              '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg> Görüşme</button>' +
+              '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg> G\u00F6r\u00FC\u015Fme</button>' +
             '<button class="btn btn-ghost btn-sm" onclick="showClientDetail(\'' + client.id + '\')">' +
               '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Notlar</button>' +
           '</div>' +
@@ -2652,9 +2681,7 @@ renderExpertView = async function() {
     html += '</div>';
   }
 
-    // Admin messages section
-  var adminRes = await sb.from("profiles").select("id, full_name").eq("role", "admin").limit(1).maybeSingle();
-  var admin = adminRes.data;
+  // Admin messages section
   if (admin) {
     var adminUnread = await getUnreadCount(admin.id);
     var adminUnreadBadge = adminUnread > 0 ? '<span class="unread-badge">' + adminUnread + '</span>' : '';
@@ -2667,16 +2694,15 @@ renderExpertView = async function() {
     var adminPreview = '';
     if (lastAdminMsg) {
       var isMyMsg = lastAdminMsg.sender_id === myId2;
-      var prevMsgText = lastAdminMsg.content || (lastAdminMsg.file_name ? '📎 ' + lastAdminMsg.file_name : 'Dosya');
+      var prevMsgText = lastAdminMsg.content || (lastAdminMsg.file_name ? '\uD83D\uDCCE ' + lastAdminMsg.file_name : 'Dosya');
       var prevText = prevMsgText.length > 40 ? prevMsgText.substring(0, 40) + '...' : prevMsgText;
       adminPreview = '<div class="user-card-detail">' + (isMyMsg ? '<strong>Siz:</strong> ' : '<strong>Admin:</strong> ') + esc(prevText) + '</div>';
     } else {
-      adminPreview = '<div class="user-card-detail">Henüz mesaj yok</div>';
+      adminPreview = '<div class="user-card-detail">Hen\u00FCz mesaj yok</div>';
     }
-
     html +=
-      '<div class="admin-message-section" style="margin-top:var(--space-6);margin-bottom:var(--space-2);">' +
-        '<h3 class="section-title">Yönetim Mesajları</h3>' +
+      '<div style="margin-top:var(--space-6);">' +
+        '<h3 class="section-title">Y\u00F6netim Mesajlar\u0131</h3>' +
         '<div class="user-card" style="cursor:pointer;" onclick="openMessaging(\'' + escAttr(admin.id) + '\',\'' + escAttr(admin.full_name) + '\')">' +
           '<div class="user-card-avatar" style="background:var(--color-primary);">' + getInitials(admin.full_name) + '</div>' +
           '<div class="user-card-info">' +
@@ -2691,46 +2717,158 @@ renderExpertView = async function() {
       '</div>';
   }
 
-  // Upcoming sessions section
-  html += '<div class="upcoming-sessions-section">';
-  html += '<h3 class="section-title" style="margin-top:var(--space-8);">Yaklaşan Seanslar</h3>';
+  container.innerHTML = html;
+}
 
-  if (upcomingSessions.length === 0) {
-    html += '<p class="no-sessions-msg">Yaklaşan planlanmış seans bulunmuyor.</p>';
+function renderExpertAnnouncementsTab(container) {
+  var announcements = _expertViewData.announcements || [];
+  var html = '<div class="page-header" style="margin-bottom:var(--space-4);">' +
+    '<h2 class="page-title">Duyurular</h2>' +
+  '</div>';
+
+  if (announcements.length === 0) {
+    html += '<div class="empty-state"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M19.4 14.9C20.2 16.4 21 17 21 17H3s3-2 3-9c0-3.3 2.7-6 6-6 .7 0 1.3.1 1.9.3"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><circle cx="18" cy="8" r="3"/></svg><h3>Hen\u00FCz duyuru yok</h3><p>Y\u00F6netim taraf\u0131ndan payla\u015F\u0131lan duyurular burada g\u00F6r\u00FCnecektir.</p></div>';
   } else {
-    html += '<div class="session-list session-list-compact">';
-    upcomingSessions.forEach(function(sess) {
-      var clientName = sess.client ? sess.client.full_name : "?";
-      var statusClass = sess.status === "completed" ? "session-status-completed" : sess.status === "cancelled" ? "session-status-cancelled" : "session-status-planned";
-      var statusLabel = sess.status === "completed" ? "Tamamlandı" : sess.status === "cancelled" ? "İptal" : "Planlandı";
-      html +=
-        '<div class="session-card session-card-compact">' +
-          '<div class="session-card-date">' +
-            '<div class="session-day">' + formatSessionDate(sess.session_date) + '</div>' +
-            '<div class="session-time">' + sess.start_time.substring(0, 5) + ' – ' + sess.end_time.substring(0, 5) + '</div>' +
+    html += '<div class="announcements-list">';
+    announcements.forEach(function(a) {
+      var date = new Date(a.created_at);
+      var dateStr = date.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+      html += '<div class="announcement-card">' +
+        '<div class="announcement-header">' +
+          '<div>' +
+            '<div class="announcement-title">' + esc(a.title) + '</div>' +
+            '<div class="announcement-date">' + dateStr + '</div>' +
           '</div>' +
-          '<div class="session-card-info">' +
-            '<div class="session-names"><span class="session-client">' + esc(clientName) + '</span></div>' +
-            (sess.notes ? '<div class="session-notes-preview">' + esc(sess.notes) + '</div>' : '') +
-          '</div>' +
-          '<span class="session-status ' + statusClass + '">' + statusLabel + '</span>' +
-        '</div>';
+        '</div>' +
+        '<div class="announcement-content">' + esc(a.content).replace(/\n/g, '<br>') + '</div>' +
+      '</div>';
     });
     html += '</div>';
   }
+  container.innerHTML = html;
+}
 
-  html += '</div>';
-
-  // Payment Calendar Section
-  html += '<div style="margin-top:var(--space-8);">' +
-    '<h3 class="section-title">\u00D6deme Takvimim</h3>' +
-    '<div id="expertPaymentsContainer"></div>' +
+function renderExpertPaymentsTab(container) {
+  var payments = _expertViewData.payments || [];
+  var html = '<div class="page-header" style="margin-bottom:var(--space-4);">' +
+    '<h2 class="page-title">\u00D6deme Takvimim</h2>' +
   '</div>';
 
-  html += '<div id="clientDetailView" class="detail-view"></div>';
-  main.innerHTML = html;
-  renderExpertPaymentsSection();
-};
+  if (payments.length === 0) {
+    html += '<div class="empty-state" style="padding:var(--space-8);">' +
+      '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>' +
+      '<h3>Hen\u00FCz \u00F6deme takvimi olu\u015Fturulmam\u0131\u015F</h3>' +
+      '<p>\u00D6deme takviminiz olu\u015Fturuldu\u011Funda burada g\u00F6r\u00FCnecektir.</p></div>';
+    container.innerHTML = html;
+    return;
+  }
+
+  // Company IBAN info
+  html += '<div class="payment-company-info">' +
+    '<div class="payment-company-title">' +
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>' +
+      ' \u00D6deme Bilgileri' +
+    '</div>' +
+    '<div class="payment-company-detail">' +
+      '<strong>Firma:</strong> SYNAPSE LYNK DANI\u015EMANLIK VE E\u011E\u0130T\u0130M H\u0130ZMETLER\u0130 L\u0130M\u0130TED \u015E\u0130RKET\u0130' +
+    '</div>' +
+    '<div class="payment-company-detail">' +
+      '<strong>IBAN:</strong> <span class="payment-iban">TR29 0001 2001 6620 0010 1011 89</span>' +
+      ' <button class="btn btn-ghost btn-sm" onclick="copyCompanyIban()" title="Kopyala" style="padding:2px 6px;">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>' +
+    '</div>' +
+    '<div class="payment-company-hint">Ayl\u0131k hizmet bedelinizi yukar\u0131daki IBAN\'a havale/EFT ile g\u00F6nderebilirsiniz.</div>' +
+  '</div>';
+
+  // Stats
+  var totalPending = 0, totalPaid = 0, nextPayment = null;
+  var today = new Date().toISOString().split('T')[0];
+  payments.forEach(function(p) {
+    if (p.status === 'paid') totalPaid++;
+    else {
+      totalPending++;
+      if (!nextPayment && p.due_date >= today) nextPayment = p;
+    }
+  });
+
+  html += '<div class="stats-grid" style="margin-bottom:var(--space-4);">' +
+    '<div class="stat-card"><div class="stat-value">' + totalPaid + '/' + payments.length + '</div><div class="stat-label">\u00D6denen / Toplam</div></div>';
+  if (nextPayment) {
+    var nextDate = new Date(nextPayment.due_date + 'T00:00:00').toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' });
+    html += '<div class="stat-card"><div class="stat-value">' + formatCurrency(parseFloat(nextPayment.amount)) + '</div><div class="stat-label">Sonraki \u00D6deme (' + nextDate + ')</div></div>';
+  }
+  html += '</div>';
+
+  // Payment list
+  html += '<div class="payment-list">';
+  for (var k = 0; k < payments.length; k++) {
+    var p = payments[k];
+    var isOverdue = p.status === 'pending' && p.due_date < today;
+    var statusClass = p.status === 'paid' ? 'paid' : (isOverdue ? 'overdue' : 'pending');
+    var statusLabel = p.status === 'paid' ? '\u00D6dendi' : (isOverdue ? 'Gecikmi\u015F' : 'Bekliyor');
+    var iconSvg = p.status === 'paid'
+      ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>'
+      : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>';
+    var dueDateStr = new Date(p.due_date + 'T00:00:00').toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+
+    html += '<div class="payment-item payment-item-' + statusClass + '">' +
+      '<div class="payment-item-icon">' + iconSvg + '</div>' +
+      '<div class="payment-item-info">' +
+        '<div class="payment-item-period">' + esc(p.period_label) + '</div>' +
+        '<div class="payment-item-date">' + dueDateStr + '</div>' +
+      '</div>' +
+      '<div class="payment-item-right">' +
+        '<div class="payment-item-amount">' + formatCurrency(parseFloat(p.amount)) + '</div>' +
+        '<div class="payment-item-status payment-status-' + statusClass + '">' + statusLabel + '</div>' +
+      '</div>' +
+    '</div>';
+  }
+  html += '</div>';
+
+  container.innerHTML = html;
+}
+
+function renderExpertProfileTab(container) {
+  var p = currentProfile;
+  var html = '<div class="page-header" style="margin-bottom:var(--space-4);">' +
+    '<h2 class="page-title">Profilim</h2>' +
+  '</div>';
+
+  html += '<div class="card" style="max-width:600px;">';
+
+  // Display info
+  html += '<div style="display:flex;align-items:center;gap:var(--space-4);margin-bottom:var(--space-6);">' +
+    '<div class="detail-avatar">' + getInitials(p.full_name) + '</div>' +
+    '<div>' +
+      '<h3 style="margin:0;font-size:var(--text-lg);font-weight:600;">' + esc(p.full_name) + '</h3>' +
+      '<p style="margin:0;color:var(--color-text-muted);font-size:var(--text-sm);">' + esc(p.email || '') + '</p>' +
+      '<span class="role-tag expert" style="margin-top:4px;display:inline-block;">' + esc(p.specialty || 'Uzman') + '</span>' +
+    '</div>' +
+  '</div>';
+
+  // Info grid
+  var fields = [
+    { label: '\u00C7al\u0131\u015Fma Alanlar\u0131', value: p.areas_of_expertise || '\u2014' },
+    { label: 'Telefon', value: p.phone || '\u2014' },
+    { label: 'IBAN', value: p.iban ? '<span class="payment-iban">' + esc(p.iban.replace(/(.{4})/g, '$1 ').trim()) + '</span>' : '<span style="color:var(--color-warning);">Girilmemi\u015F</span>' },
+  ];
+
+  fields.forEach(function(f) {
+    html += '<div style="padding:var(--space-3) 0;border-bottom:1px solid var(--color-divider);">' +
+      '<div style="font-size:var(--text-xs);color:var(--color-text-faint);font-weight:500;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px;">' + f.label + '</div>' +
+      '<div style="font-size:var(--text-sm);color:var(--color-text);">' + f.value + '</div>' +
+    '</div>';
+  });
+
+  html += '<div style="margin-top:var(--space-6);">' +
+    '<button class="btn btn-primary" onclick="openMyProfile()">' +
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>' +
+      ' Bilgilerimi D\u00FCzenle</button>' +
+  '</div>';
+
+  html += '</div>';
+  container.innerHTML = html;
+}
 
 // ==================== ENHANCED CLIENT VIEW (Tabbed Self-Service Portal) ====================
 var currentClientTab = 'home';
@@ -3076,7 +3214,12 @@ async function saveMyProfile() {
 
   showToast("Profiliniz güncellendi");
   closeModal("expertProfileModal");
-  renderExpertView();
+  if (typeof currentExpertTab !== 'undefined' && currentExpertTab === 'profile') {
+    var pc = document.getElementById('expertTabContent');
+    if (pc) renderExpertProfileTab(pc);
+  } else {
+    renderExpertView();
+  }
 }
 
 // ==================== DUYURU SİSTEMİ (Announcements) ====================
